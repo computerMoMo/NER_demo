@@ -17,7 +17,7 @@ import sys, os
 pkg_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../nlp_proj/
 sys.path.append(pkg_path)
 
-from seg_dict import ner_data_reader as reader # absolute import
+import ner_data_reader as reader
 
 file_path = os.path.dirname(os.path.abspath(__file__))  # ../nlp_proj/seg/
 data_path = os.path.join(file_path, "ner_data")  # path to find corpus vocab file
