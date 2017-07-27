@@ -98,8 +98,7 @@ def _read_vocab(path):
 def load_vocab(data_path):
     char_to_id = _read_vocab(os.path.join(data_path, "char_to_id"))
     tag_to_id = _read_vocab(os.path.join(data_path, "tag_to_id"))
-    pinyin_dict = _read_pinyin_dict(os.path.join(data_path, "PinyinDict.txt"))
-    return char_to_id, tag_to_id, pinyin_dict
+    return char_to_id, tag_to_id
 
 
 def ner_sentence_to_ids(sentence, char_to_id):

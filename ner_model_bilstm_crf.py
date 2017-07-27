@@ -13,11 +13,12 @@ import time
 import numpy as np
 import tensorflow as tf
 import sys, os
+import ner_data_reader as reader
+import codecs
+
 
 pkg_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../nlp_proj/
 sys.path.append(pkg_path)
-
-import ner_data_reader as reader
 
 file_path = os.path.dirname(os.path.abspath(__file__))  # ../nlp_proj/seg/
 data_path = os.path.join(file_path, "ner_data")  # path to find corpus vocab file
@@ -127,7 +128,7 @@ class LargeConfigChinese(object):
     hidden_size = 150
     embedding_size = 100
     max_epoch = 5
-    max_max_epoch = 10
+    max_max_epoch = 1
     stack = False
     keep_prob = 0.8  # There is one dropout layer on input tensor also, don't set lower than 0.9
     lr_decay = 1 / 1.15
@@ -319,6 +320,38 @@ def ner_evaluate(session, model, char_data, tag_data, len_data, eval_op, batch_s
     return accuracy, total_P, total_R, total_F, per_P, per_R, per_F, loc_P, loc_R, loc_F, org_P, org_R, org_F
 
 
+def ner_generate_results(session, model, char_data, tag_data, len_data, eval_op, batch_size, result_file_name):
+    tag_file = codecs.open("ner_data/tag_to_id", encoding="utf-8")
+    id_to_tag = dict()
+    for line in tag_file:
+        line_list = line.strip().split('\t')
+        if len(line_list) == 2:
+            id_to_tag[int(line_list[1])] = line_list[0]
+    tag_file.close()
+    result_file_writer = codecs.open(result_file_name, encoding="utf-8", mode='w')
+
+    xArray, yArray, lArray = reader.ner_iterator(char_data, tag_data, len_data, batch_size)
+    for x, y, l in zip(xArray, yArray, lArray):
+        fetches = [model.loss, model.logits, model.trans]
+        feed_dict = {}
+        feed_dict[model.input_data] = x
+        feed_dict[model.targets] = y
+        feed_dict[model.seq_len] = l
+        loss, logits, trans = session.run(fetches, feed_dict)
+
+        for logits_, y_, l_ in zip(logits, y, l):
+            logits_ = logits_[:l_]
+            y_ = y_[:l_]
+
+            #crf decode
+            viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(logits_, trans)
+            for i in range(0, len(y_)):
+                result_file_writer.write(str(id_to_tag[int(viterbi_sequence[i])]) + "\n")
+            result_file_writer.write("\n")
+    result_file_writer.close()
+    print("save test result done!")
+
+
 if __name__ == '__main__':
     if not FLAGS.seg_data_path:
         raise ValueError("No data files found in 'data_path' folder")
@@ -337,10 +370,6 @@ if __name__ == '__main__':
                                                     config.init_scale)
         with tf.variable_scope(FLAGS.seg_scope_name, reuse=None, initializer=initializer):
             m = Segmenter(config=config, init_embedding=char_vectors)
-        # with tf.variable_scope(FLAGS.seg_scope_name, reuse=True, initializer=initializer):
-        #  mvalid = Segmenter(is_training=False, config=eval_config, init_embedding=char_vectors)
-        #  mtest = Segmenter(is_training=False, config=eval_config, init_embedding=char_vectors)
-
         # CheckPoint State
         ckpt = tf.train.get_checkpoint_state(FLAGS.seg_train_dir)
         if ckpt:
@@ -353,8 +382,6 @@ if __name__ == '__main__':
         best_f = 0.0
 
         for i in range(config.max_max_epoch):
-            # lr_decay = config.lr_decay ** max(i - config.max_epoch, 0.0)
-            # m.assign_lr(session, config.learning_rate * lr_decay)
             m.assign_lr(session, config.learning_rate)
 
             print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
@@ -381,9 +408,10 @@ if __name__ == '__main__':
                 print("Model Saved...")
 
         test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
-        test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_char, test_tag, test_len, tf.no_op(),
-                                                          config.batch_size)
+        test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_char, test_tag, test_len, tf.no_op(), config.batch_size)
         print("Test Accuray: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
         print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
         print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
         print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
+
+        # ner_generate_results(session, m, test_char, test_tag, test_len, tf.no_op(), config.batch_size, "ner_data/test_tag_result.txt")
