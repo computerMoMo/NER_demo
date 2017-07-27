@@ -127,7 +127,7 @@ class LargeConfigChinese(object):
     hidden_size = 150
     embedding_size = 100
     max_epoch = 5
-    max_max_epoch = 5
+    max_max_epoch = 10
     stack = False
     keep_prob = 0.8  # There is one dropout layer on input tensor also, don't set lower than 0.9
     lr_decay = 1 / 1.15
@@ -227,51 +227,6 @@ def run_epoch(session, model, char_data, tag_data, len_data, eval_op, batch_size
     return np.exp(losses / iters)
 
 
-# def evaluate(session, model, char_data, tag_data, dict_data, len_data, eval_op, batch_size, verbose=False):
-#     """Runs the model on the given data."""
-#     correct_labels = 0
-#     total_labels = 0
-#
-#     xArray, yArray, dArray, lArray = reader.iterator(char_data, tag_data, dict_data, len_data, batch_size)
-#     yp_wordnum = 0
-#     yt_wordnum = 0
-#     cor_num = 0
-#     for x, y, d, l in zip(xArray, yArray, dArray, lArray):
-#         fetches = [model.loss, model.logits, model.trans]
-#         feed_dict = {}
-#         feed_dict[model.input_data] = x
-#         feed_dict[model.targets] = y
-#         feed_dict[model.dicts] = d
-#         feed_dict[model.seq_len] = l
-#         loss, logits, trans = session.run(fetches, feed_dict)
-#
-#         for logits_, y_, l_ in zip(logits, y, l):
-#             logits_ = logits_[:l_]
-#             y_ = y_[:l_]
-#             viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(logits_, trans)
-#
-#             yp_wordnum += viterbi_sequence.count(2) + viterbi_sequence.count(3)
-#             yt_wordnum += (y_ == 2).sum() + (y_ == 3).sum()
-#             correct_labels += np.sum(np.equal(viterbi_sequence, y_))
-#             total_labels += l_
-#
-#             start = 0
-#             for i in range(len(y_)):
-#                 if (y_[i] == 2 or y_[i] == 3):
-#                     flag = True
-#                     for j in range(start, i + 1):
-#                         if y_[j] != viterbi_sequence[j]:
-#                             flag = False
-#                     if flag == True:
-#                         cor_num += 1
-#                     start = i + 1
-#     P = cor_num / float(yp_wordnum)
-#     R = cor_num / float(yt_wordnum)
-#     F = 2 * P * R / (P + R)
-#     accuracy = 100.0 * correct_labels / float(total_labels)
-#     return accuracy, P, R, F
-
-
 def ner_evaluate(session, model, char_data, tag_data, len_data, eval_op, batch_size, verbose=False):
     correct_labels = 0
     total_labels = 0
@@ -362,7 +317,6 @@ def ner_evaluate(session, model, char_data, tag_data, len_data, eval_op, batch_s
     total_F = 2*total_P*total_R /(total_P + total_R)
 
     return accuracy, total_P, total_R, total_F, per_P, per_R, per_F, loc_P, loc_R, loc_F, org_P, org_R, org_F
-
 
 
 if __name__ == '__main__':
