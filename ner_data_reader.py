@@ -64,7 +64,7 @@ def _ner_build_vocab(vector_filename):
             char_vectors.append(vector)
             idx += 1
         char_to_id[UNKNOWN] = idx
-        char_vectors.append(np.zeros([vec_len,], dtype=np.float32))
+        char_vectors.append(np.zeros([vec_len], dtype=np.float32))
 
     char_vectors = np.asarray(char_vectors, dtype=np.float32)
 
@@ -107,11 +107,17 @@ def ner_sentence_to_ids(sentence, char_to_id):
     sentence.insert(0, '<BOS>')
     sentence.insert(0, '<BOS>')
     char_idx = []
+    # 增加长度为5的窗口特征
     for i in range(2, len(sentence)-2):
-        if sentence[i] in char_to_id:
-            char_idx.append(char_to_id[sentence[i]])
-        else:
-            char_idx.append(char_to_id[UNKNOWN])
+        for j in range(-2, 3):
+            if sentence[i+j] in char_to_id:
+                char_idx.append(char_to_id[sentence[i+j]])
+            else:
+                char_idx.append(char_to_id[UNKNOWN])
+        # if sentence[i] in char_to_id:
+        #     char_idx.append(char_to_id[sentence[i]])
+        # else:
+        #     char_idx.append(char_to_id[UNKNOWN])
     return len(sentence)-4, char_idx
 
 
@@ -187,16 +193,16 @@ def ner_iterator(char_data, tag_data, len_data, batch_size):
             continue
         maxlen = max(len_data[batch_size * i: batch_size * (i + 1)])
         l = np.zeros([batch_size], dtype=np.int32)
-        x = np.zeros([batch_size, maxlen], dtype=np.int32)
+        x = np.zeros([batch_size, maxlen*5], dtype=np.int32)#扩大5倍因为增加了窗口特征
         y = np.zeros([batch_size, maxlen], dtype=np.int32)
         l[:len(len_data[batch_size * i:batch_size * (i + 1)])] = len_data[batch_size * i:batch_size * (i + 1)]
         for j, l_j in enumerate(l[:len(len_data[batch_size * i:batch_size * (i + 1)])]):
-            x[j][:l_j] = char_data[batch_size * i + j]
+            x[j][:l_j*5] = char_data[batch_size * i + j]
             y[j][:l_j] = tag_data[batch_size * i + j]
         lArray.append(l)
         xArray.append(x)
         yArray.append(y)
-    return (xArray, yArray, lArray)
+    return xArray, yArray, lArray
 
 
 def ner_shuffle(char_data, tag_data, len_data):
@@ -206,7 +212,7 @@ def ner_shuffle(char_data, tag_data, len_data):
     idx = np.arange(len(len_data))
     np.random.shuffle(idx)
 
-    return (char_data[idx], tag_data[idx], len_data[idx])
+    return char_data[idx], tag_data[idx], len_data[idx]
 
 
 def main():

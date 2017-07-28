@@ -60,7 +60,7 @@ class Segmenter(object):
                 self.embedding = tf.Variable(init_embedding, name="embedding", dtype=data_type())
         inputs = tf.nn.embedding_lookup(self.embedding, self._input_data)
         inputs = tf.nn.dropout(inputs, config.keep_prob)
-        inputs = tf.reshape(inputs, [batch_size, -1, self.embedding_size])  # 比原来sentence长度扩大了9倍
+        inputs = tf.reshape(inputs, [batch_size, -1, 5*self.embedding_size])  # 比原来sentence长度扩大了5倍,因为增加了长度为5的窗口特征
         # d = tf.reshape(self._dicts, [batch_size, -1, 16])
 
         self._loss, self._logits, self._trans = _bilstm_model(inputs, self._targets, self._seq_len, config)
