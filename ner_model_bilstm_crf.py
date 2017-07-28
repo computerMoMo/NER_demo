@@ -128,7 +128,7 @@ class LargeConfigChinese(object):
     hidden_size = 150
     embedding_size = 100
     max_epoch = 5
-    max_max_epoch = 1
+    max_max_epoch = int(sys.argv[1])
     stack = False
     keep_prob = 0.8  # There is one dropout layer on input tensor also, don't set lower than 0.9
     lr_decay = 1 / 1.15
