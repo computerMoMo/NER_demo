@@ -36,6 +36,7 @@ flags.DEFINE_integer("vocab_size", 16116, "vocab size")
 flags.DEFINE_integer("target_num", 13, "target nums")
 flags.DEFINE_integer("embedding_size", 100, "char embedding size")
 flags.DEFINE_integer("batch_size", 128, "batch size")
+flags.DEFINE_float("lr", 0.005, "learning rate")
 flags.DEFINE_float("keep_prob", 0.8, "drop out keep prob")
 
 FLAGS = flags.FLAGS
@@ -130,7 +131,7 @@ class Segmenter(object):
 class LargeConfigChinese(object):
     """Large config."""
     init_scale = 0.05
-    learning_rate = 0.005
+    learning_rate = FLAGS.lr
     max_grad_norm = 5
     hidden_size = 150
     embedding_size = FLAGS.embedding_size
