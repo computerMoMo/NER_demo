@@ -30,6 +30,13 @@ logging = tf.logging
 flags.DEFINE_string("seg_data_path", data_path, "data_path")
 flags.DEFINE_string("seg_train_dir", train_dir, "Training directory.")
 flags.DEFINE_string("seg_scope_name", "seg_var_scope", "Define SEG Variable Scope Name")
+flags.DEFINE_boolean("stack", False, "use a second LSTM layer")
+flags.DEFINE_integer("max_epoch", 10, "max epochs")
+flags.DEFINE_integer("vocab_size", 16116, "vocab size")
+flags.DEFINE_integer("target_num", 13, "target nums")
+flags.DEFINE_integer("embedding_size", 100, "char embedding size")
+flags.DEFINE_integer("batch_size", 128, "batch size")
+flags.DEFINE_float("keep_prob", 0.8, "drop out keep prob")
 
 FLAGS = flags.FLAGS
 
@@ -126,15 +133,15 @@ class LargeConfigChinese(object):
     learning_rate = 0.005
     max_grad_norm = 5
     hidden_size = 150
-    embedding_size = 100
+    embedding_size = FLAGS.embedding_size
     max_epoch = 5
-    max_max_epoch = int(sys.argv[1])
-    stack = False
-    keep_prob = 0.8  # There is one dropout layer on input tensor also, don't set lower than 0.9
+    max_max_epoch = FLAGS.max_epoch
+    stack = FLAGS.stack
+    keep_prob = FLAGS.keep_prob  # There is one dropout layer on input tensor also, don't set lower than 0.9
     lr_decay = 1 / 1.15
     batch_size = 128  # single sample batch
-    vocab_size = 16116
-    target_num = 13  # SEG tagging tag number for ChineseNER
+    vocab_size = FLAGS.vocab_size
+    target_num = FLAGS.target_num  # SEG tagging tag number for ChineseNER
     bi_direction = True  # LSTM or BiLSTM
 
 
