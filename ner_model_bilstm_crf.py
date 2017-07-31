@@ -194,11 +194,15 @@ def _bilstm_model(inputs, targets, seq_len, config):
 
             # outputs is a length T list of output vectors, which is [batch_size*maxlen, 2 * hidden_size]
         output = tf.reshape(output, [-1, 2 * hidden_size])
-        softmax_w = tf.get_variable("softmax_w", [hidden_size * 2, target_num], dtype=data_type())
-        softmax_b = tf.get_variable("softmax_b", [target_num], dtype=data_type())
+
         # 加一个tanh激活函数
-        logits = tf.matmul(output, softmax_w) + softmax_b
-        logits = tf.nn.tanh(logits)#tanh 激活函数
+        W = tf.get_variable("W", shape=[hidden_size * 2, hidden_size], dtype=data_type())
+        b = tf.get_variable("b", shape=[hidden_size], dtype=data_type(), initializer=tf.zeros_initializer())
+        hidden = tf.tanh(tf.nn.xw_plus_b(output, W, b))#hidden 的size:[-1,hidden_size]
+        
+        softmax_w = tf.get_variable("softmax_w", [hidden_size, target_num], dtype=data_type())
+        softmax_b = tf.get_variable("softmax_b", [target_num], dtype=data_type())
+        logits = tf.matmul(hidden, softmax_w) + softmax_b
         logits = tf.reshape(logits, [batch_size, -1, target_num])
     # CRF层
     with tf.variable_scope("loss") as scope:
