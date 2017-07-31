@@ -180,7 +180,7 @@ def _bilstm_model(inputs, targets, seq_len, config):
             scope='layer_1'
         )
         output = tf.concat(axis=2, values=[forward_output, backward_output])
-        # if stack 又添加一层双向LSTM???
+        # if stack 又添加一层双向LSTM
         if config.stack:
             (forward_output, backward_output), _ = tf.nn.bidirectional_dynamic_rnn(
                 fw_cell,
@@ -193,12 +193,12 @@ def _bilstm_model(inputs, targets, seq_len, config):
             output = tf.concat(axis=2, values=[forward_output, backward_output])
 
             # outputs is a length T list of output vectors, which is [batch_size*maxlen, 2 * hidden_size]
-        # output = tf.concat(values=[output, dicts], axis=2)  # 加入了pinying 字典特征
         output = tf.reshape(output, [-1, 2 * hidden_size])
         softmax_w = tf.get_variable("softmax_w", [hidden_size * 2, target_num], dtype=data_type())
         softmax_b = tf.get_variable("softmax_b", [target_num], dtype=data_type())
-
+        # 加一个tanh激活函数
         logits = tf.matmul(output, softmax_w) + softmax_b
+        logits = tf.nn.tanh(logits)#tanh 激活函数
         logits = tf.reshape(logits, [batch_size, -1, target_num])
     # CRF层
     with tf.variable_scope("loss") as scope:
