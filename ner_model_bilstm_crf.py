@@ -39,6 +39,7 @@ flags.DEFINE_integer("embedding_size", 100, "char embedding size")
 flags.DEFINE_integer("batch_size", 128, "batch size")
 flags.DEFINE_integer("seg_embedding_size", 20, "seg embedding size")
 flags.DEFINE_integer("seg_nums", 4, "seg nums")
+flags.DEFINE_integer("hidden_size", 100, "hidden_size")
 flags.DEFINE_float("lr", 0.005, "learning rate")
 flags.DEFINE_float("keep_prob", 0.8, "drop out keep prob")
 
@@ -147,14 +148,14 @@ class LargeConfigChinese(object):
     init_scale = 0.05
     learning_rate = FLAGS.lr
     max_grad_norm = 5
-    hidden_size = 150
+    hidden_size = FLAGS.hidden_size
     embedding_size = FLAGS.embedding_size
     max_epoch = 5
     max_max_epoch = FLAGS.max_epoch
     stack = FLAGS.stack
     keep_prob = FLAGS.keep_prob  # There is one dropout layer on input tensor also, don't set lower than 0.9
     lr_decay = 1 / 1.15
-    batch_size = 128  # single sample batch
+    batch_size = FLAGS.batch_size  # single sample batch
     vocab_size = FLAGS.vocab_size
     target_num = FLAGS.target_num  # SEG tagging tag number for ChineseNER
     bi_direction = True  # LSTM or BiLSTM
