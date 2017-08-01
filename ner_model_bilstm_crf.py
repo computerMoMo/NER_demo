@@ -392,7 +392,9 @@ if __name__ == '__main__':
     train_char, train_tag, train_len, dev_char, dev_tag, dev_len, test_char, test_tag, test_len, char_vectors, vocab_size, train_seg, dev_seg, test_seg = raw_data
 
     config = get_config()
+    config.vocab_size = vocab_size
     eval_config = get_config()
+    eval_config.vocab_size =vocab_size
     # eval_config.batch_size = 1
 
     with tf.Graph().as_default(), tf.Session() as session:
