@@ -13,6 +13,7 @@ import sys, os
 import codecs
 import re
 import io
+import jieba
 # sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 import numpy as np
@@ -20,6 +21,25 @@ import tensorflow as tf
 
 global UNKNOWN
 UNKNOWN = "<OOV>"
+
+
+def get_seg_features(string):
+    """
+    Segment text with jieba
+    features are represented in bies format
+    s donates single word
+    """
+    seg_feature = []
+
+    for word in jieba.cut(string):
+        if len(word) == 1:
+            seg_feature.append(0)
+        else:
+            tmp = [2] * len(word)
+            tmp[0] = 1
+            tmp[-1] = 3
+            seg_feature.extend(tmp)
+    return seg_feature
 
 
 def _ner_read_file(filename):
@@ -102,11 +122,19 @@ def load_vocab(data_path):
 
 
 def ner_sentence_to_ids(sentence, char_to_id):
+    # 产生分词特征
+    seg_idx = get_seg_features("".join(sentence))
+
     sentence.append('<EOS>')
     sentence.append('<EOS>')
     sentence.insert(0, '<BOS>')
     sentence.insert(0, '<BOS>')
+    seg_idx.append(0)
+    seg_idx.append(0)
+    seg_idx.insert(0, 0)
+    seg_idx.insert(0, 0)
     char_idx = []
+    new_seg_idx = []
     # 增加长度为5的窗口特征
     for i in range(2, len(sentence)-2):
         for j in range(-2, 3):
@@ -114,11 +142,9 @@ def ner_sentence_to_ids(sentence, char_to_id):
                 char_idx.append(char_to_id[sentence[i+j]])
             else:
                 char_idx.append(char_to_id[UNKNOWN])
-        # if sentence[i] in char_to_id:
-        #     char_idx.append(char_to_id[sentence[i]])
-        # else:
-        #     char_idx.append(char_to_id[UNKNOWN])
-    return len(sentence)-4, char_idx
+            new_seg_idx.append(seg_idx[i+j])
+
+    return len(sentence)-4, char_idx, new_seg_idx
 
 
 def word_ids_to_sentence(data_path, ids):
@@ -133,12 +159,14 @@ def _ner_file_to_char_ids(filename, char_to_id, tag_to_id):
     charArray = []
     tagArray = []
     lenArray = []
+    segArray = []
     for sentence, tag in zip(sentences, tags):
-        l, char_idx = ner_sentence_to_ids(sentence, char_to_id)
+        l, char_idx, seg_idx = ner_sentence_to_ids(sentence, char_to_id)
         lenArray.append(l)
         charArray.append(char_idx)
+        segArray.append(seg_idx)
         tagArray.append([tag_to_id[t] if t in tag_to_id else tag_to_id[UNKNOWN] for t in tag])
-    return charArray, tagArray, lenArray
+    return charArray, tagArray, lenArray, segArray
 
 
 def ner_load_data(data_path=None, vector_file="ner_vectors.txt"):
@@ -167,67 +195,64 @@ def ner_load_data(data_path=None, vector_file="ner_vectors.txt"):
     print("tag dictionary size " + str(len(tag_to_id)))
 
     # train_char, train_tag, train_dict, train_len = _file_to_char_ids(train_path, char_to_id, tag_to_id, pinyin_dict)
-    train_char, train_tag, train_len = _ner_file_to_char_ids(train_path, char_to_id, tag_to_id)
+    train_char, train_tag, train_len, train_seg = _ner_file_to_char_ids(train_path, char_to_id, tag_to_id)
     print("train dataset: " + str(len(train_char)) + " " + str(len(train_tag)))
 
     # dev_char, dev_tag, dev_dict, dev_len = _file_to_char_ids(dev_path, char_to_id, tag_to_id, pinyin_dict)
-    dev_char, dev_tag, dev_len = _ner_file_to_char_ids(dev_path, char_to_id, tag_to_id)
+    dev_char, dev_tag, dev_len, dev_seg = _ner_file_to_char_ids(dev_path, char_to_id, tag_to_id)
     print("dev dataset: " + str(len(dev_char)) + " " + str(len(dev_tag)))
 
     # test_char, test_tag, test_dict, test_len = _file_to_char_ids(test_path, char_to_id, tag_to_id, pinyin_dict)
-    test_char, test_tag, test_len = _ner_file_to_char_ids(test_path, char_to_id, tag_to_id)
+    test_char, test_tag, test_len, test_seg = _ner_file_to_char_ids(test_path, char_to_id, tag_to_id)
     print("test dataset: " + str(len(test_char)) + " " + str(len(test_tag)))
     vocab_size = len(char_to_id)
     return (train_char, train_tag, train_len, dev_char, dev_tag, dev_len,
-            test_char, test_tag, test_len, char_vectors, vocab_size)
+            test_char, test_tag, test_len, char_vectors, vocab_size, train_seg, dev_seg, test_seg)
 
 
-def ner_iterator(char_data, tag_data, len_data, batch_size):
+def ner_iterator(char_data, tag_data, len_data, batch_size, seg_data):
     data_len = len(char_data)
     batch_len = data_len // batch_size
     lArray = []
     xArray = []
     yArray = []
+    segArray = []
     for i in range(batch_len):
         if len(len_data[batch_size * i: batch_size * (i + 1)]) == 0:
             continue
         maxlen = max(len_data[batch_size * i: batch_size * (i + 1)])
         l = np.zeros([batch_size], dtype=np.int32)
-        x = np.zeros([batch_size, maxlen*5], dtype=np.int32)#扩大5倍因为增加了窗口特征
+        x = np.zeros([batch_size, maxlen*5], dtype=np.int32)#因为增加了窗口特征,size:5
         y = np.zeros([batch_size, maxlen], dtype=np.int32)
+        seg = np.zeros([batch_size, maxlen*5], dtype=np.int32)#分词特征
         l[:len(len_data[batch_size * i:batch_size * (i + 1)])] = len_data[batch_size * i:batch_size * (i + 1)]
         for j, l_j in enumerate(l[:len(len_data[batch_size * i:batch_size * (i + 1)])]):
             x[j][:l_j*5] = char_data[batch_size * i + j]
             y[j][:l_j] = tag_data[batch_size * i + j]
+            seg[j][:l_j*5] = seg_data[batch_size * i + j]
         lArray.append(l)
         xArray.append(x)
         yArray.append(y)
-    return xArray, yArray, lArray
+        segArray.append(seg)
+    return xArray, yArray, lArray, segArray
 
 
-def ner_shuffle(char_data, tag_data, len_data):
+def ner_shuffle(char_data, tag_data, len_data, seg_data):
     char_data = np.asarray(char_data)
     tag_data = np.asarray(tag_data)
     len_data = np.asarray(len_data)
+    seg_data = np.asarray(seg_data)
     idx = np.arange(len(len_data))
     np.random.shuffle(idx)
 
-    return char_data[idx], tag_data[idx], len_data[idx]
+    return char_data[idx], tag_data[idx], len_data[idx], seg_data[idx]
 
 
 def main():
     """
     Test load_data method and iterator method
     """
-    data_path = "ner_data"
 
-    train_char, train_tag, train_len, dev_char, dev_tag, dev_len, test_char, test_tag, test_len, char_vectors, vocab_size = ner_load_data(data_path)
-    # xArray, yArray, lArray = ner_iterator(train_char, train_tag, train_len, 50)
-    #
-    # print("xArray:", len(xArray), "  ", len(xArray[0]), "  ", xArray[0][0])
-    # print("yArray:", len(yArray), "  ", len(yArray[0]), "  ", yArray[0][0])
-    # print("lArray:", len(lArray), "  ", len(lArray[0]), "  ", lArray[0])
-    print(vocab_size)
 
 
 if __name__ == '__main__':
