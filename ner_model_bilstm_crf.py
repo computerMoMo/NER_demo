@@ -30,6 +30,7 @@ logging = tf.logging
 flags.DEFINE_string("seg_data_path", data_path, "data_path")
 flags.DEFINE_string("seg_train_dir", train_dir, "Training directory.")
 flags.DEFINE_string("seg_scope_name", "seg_var_scope", "Define SEG Variable Scope Name")
+flags.DEFINE_string("vector_file", "ner_vectors.txt", "word vectors file")
 flags.DEFINE_boolean("stack", False, "use a second LSTM layer")
 flags.DEFINE_integer("max_epoch", 10, "max epochs")
 flags.DEFINE_integer("vocab_size", 16116, "vocab size")
@@ -199,7 +200,7 @@ def _bilstm_model(inputs, targets, seq_len, config):
         W = tf.get_variable("W", shape=[hidden_size * 2, hidden_size], dtype=data_type())
         b = tf.get_variable("b", shape=[hidden_size], dtype=data_type(), initializer=tf.zeros_initializer())
         hidden = tf.tanh(tf.nn.xw_plus_b(output, W, b))#hidden 的size:[-1,hidden_size]
-        
+
         softmax_w = tf.get_variable("softmax_w", [hidden_size, target_num], dtype=data_type())
         softmax_b = tf.get_variable("softmax_b", [target_num], dtype=data_type())
         logits = tf.matmul(hidden, softmax_w) + softmax_b
@@ -369,8 +370,8 @@ if __name__ == '__main__':
         raise ValueError("No data files found in 'data_path' folder")
 
     print("Begin Loading..")
-
-    raw_data = reader.ner_load_data(FLAGS.seg_data_path)
+    vector_file = FLAGS.vector_file
+    raw_data = reader.ner_load_data(FLAGS.seg_data_path, vector_file)
     train_char, train_tag, train_len, dev_char, dev_tag, dev_len, test_char, test_tag, test_len, char_vectors, vocab_size = raw_data
 
     config = get_config()

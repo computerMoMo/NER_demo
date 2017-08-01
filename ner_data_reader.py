@@ -141,7 +141,7 @@ def _ner_file_to_char_ids(filename, char_to_id, tag_to_id):
     return charArray, tagArray, lenArray
 
 
-def ner_load_data(data_path=None):
+def ner_load_data(data_path=None, vector_file="ner_vectors.txt"):
     """Load POS raw data from data directory "data_path".
     Args: data_path
     Returns:
@@ -152,7 +152,7 @@ def ner_load_data(data_path=None):
     train_path = os.path.join(data_path, "train_data.txt")
     dev_path = os.path.join(data_path, "dev_data.txt")
     test_path = os.path.join(data_path, "test_data.txt")
-    vector_path = os.path.join(data_path, "wiki_100.utf8")
+    vector_path = os.path.join(data_path, vector_file)
 
     # NER中暂时不用
     # bigram_path = os.path.join(data_path, "words_for_training")
