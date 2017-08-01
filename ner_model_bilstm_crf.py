@@ -69,11 +69,11 @@ class Segmenter(object):
 
         with tf.device("/cpu:0"):
             if init_embedding is None:
-                self.embedding = tf.get_variable("embedding", [self.vocab_size, self.embedding_size], dtype=data_type())
+                self.embedding = tf.get_variable("embedding", [self.vocab_size, self.embedding_size], dtype=data_type(), trainable=True)
             else:
-                self.embedding = tf.Variable(init_embedding, name="embedding", dtype=data_type())
+                self.embedding = tf.Variable(init_embedding, name="embedding", dtype=data_type(), trainable=True)
             # embedding for seg data
-            self.seg_embedding = tf.get_variable(name="seg_embedding", shape=[self.seg_nums, self.seg_embedding_size])
+            self.seg_embedding = tf.get_variable(name="seg_embedding", shape=[self.seg_nums, self.seg_embedding_size], dtype=data_type(), trainable=True)
         inputs = tf.nn.embedding_lookup(self.embedding, self._input_data)
         seg_inputs = tf.nn.embedding_lookup(self.seg_embedding, self._seg_data)
         inputs = tf.concat([inputs, seg_inputs], axis=-1)

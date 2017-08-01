@@ -66,7 +66,7 @@ def _ner_read_file(filename):
     return chars, sentences, tags
 
 
-def _ner_build_vocab(vector_filename):
+def _ner_build_vocab(vector_filename, train_path):
     char_to_id = {}
     char_vectors = []
     if not os.path.isfile(vector_filename):
@@ -83,6 +83,20 @@ def _ner_build_vocab(vector_filename):
             vector = np.asarray(list(map(float, line[1:])), dtype=np.float32)
             char_vectors.append(vector)
             idx += 1
+
+        # 将train data中含有的字但是,vector file 中没有的加入
+        train_file = codecs.open(train_path, encoding='utf-8', mode='r')
+        for line in train_file:
+            line = line.strip().split(' ')
+            if len(line) < 2:
+                    continue
+            else:
+                char = line[0]
+                if char not in char_to_id:
+                    char_to_id[char] = idx
+                    idx += 1
+                    char_vectors.append(np.zeros([vec_len], dtype=np.float32))
+
         char_to_id[UNKNOWN] = idx
         char_vectors.append(np.zeros([vec_len], dtype=np.float32))
 
@@ -186,7 +200,7 @@ def ner_load_data(data_path=None, vector_file="ner_vectors.txt"):
     # bigram_path = os.path.join(data_path, "words_for_training")
     # dict_path = os.path.join(data_path, "PinyinDict.txt")
 
-    char_to_id, tag_to_id, char_vectors = _ner_build_vocab(vector_path)
+    char_to_id, tag_to_id, char_vectors = _ner_build_vocab(vector_path, train_path)
     # pinyin_dict = _read_pinyin_dict(dict_path)
     # Save char_dict and tag_dict
     _save_vocab(char_to_id, os.path.join(data_path, "char_to_id"))
