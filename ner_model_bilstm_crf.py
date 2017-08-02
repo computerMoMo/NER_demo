@@ -36,7 +36,7 @@ flags.DEFINE_integer("max_epoch", 10, "max epochs")
 flags.DEFINE_integer("vocab_size", 16116, "vocab size")
 flags.DEFINE_integer("target_num", 13, "target nums")
 flags.DEFINE_integer("embedding_size", 100, "char embedding size")
-flags.DEFINE_integer("batch_size", 128, "batch size")
+flags.DEFINE_integer("batch_size", 1, "batch size")
 flags.DEFINE_integer("seg_embedding_size", 20, "seg embedding size")
 flags.DEFINE_integer("seg_nums", 4, "seg nums")
 flags.DEFINE_integer("hidden_size", 100, "hidden_size")
@@ -378,7 +378,7 @@ def debug_tensors(session, model, char_data, tag_data, len_data, eval_op, batch_
         break
 
 
-def ner_generate_results(session, model, char_data, tag_data, len_data, eval_op, batch_size, result_file_name):
+def ner_generate_results(session, model, char_data, tag_data, len_data, eval_op, batch_size, result_file_name, seg_data):
     tag_file = codecs.open("ner_data/tag_to_id", encoding="utf-8")
     id_to_tag = dict()
     for line in tag_file:
@@ -387,14 +387,14 @@ def ner_generate_results(session, model, char_data, tag_data, len_data, eval_op,
             id_to_tag[int(line_list[1])] = line_list[0]
     tag_file.close()
     result_file_writer = codecs.open(result_file_name, encoding="utf-8", mode='w')
-
-    xArray, yArray, lArray = reader.ner_iterator(char_data, tag_data, len_data, batch_size)
-    for x, y, l in zip(xArray, yArray, lArray):
+    xArray, yArray, lArray, segArray = reader.ner_iterator(char_data, tag_data, len_data, batch_size, seg_data)
+    for x, y, l, seg in zip(xArray, yArray, lArray, segArray):
         fetches = [model.loss, model.logits, model.trans]
         feed_dict = {}
         feed_dict[model.input_data] = x
         feed_dict[model.targets] = y
         feed_dict[model.seq_len] = l
+        feed_dict[model.seg_data] = seg
         loss, logits, trans = session.run(fetches, feed_dict)
 
         for logits_, y_, l_ in zip(logits, y, l):
@@ -403,11 +403,12 @@ def ner_generate_results(session, model, char_data, tag_data, len_data, eval_op,
 
             #crf decode
             viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(logits_, trans)
-            for i in range(0, len(y_)):
-                result_file_writer.write(str(id_to_tag[int(viterbi_sequence[i])]) + "\n")
+            # for i in range(0, len(y_)):
+            #     result_file_writer.write(str(id_to_tag[int(viterbi_sequence[i])]) + "\n")
+            for pre_tag in viterbi_sequence:
+                result_file_writer.write(str(id_to_tag[int(pre_tag)]) + "\n")
             result_file_writer.write("\n")
     result_file_writer.close()
-    print("save test result done!")
 
 
 if __name__ == '__main__':
@@ -477,5 +478,4 @@ if __name__ == '__main__':
         print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
         print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
         print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
-
-        # ner_generate_results(session, m, test_char, test_tag, test_len, tf.no_op(), config.batch_size, "ner_data/test_tag_result.txt")
+        # ner_generate_results(session, m, dev_char, dev_tag, dev_len, tf.no_op(), config.batch_size, "ner_data/test_tag_result.txt", dev_seg)

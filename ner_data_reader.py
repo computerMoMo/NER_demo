@@ -14,6 +14,7 @@ import codecs
 import re
 import io
 import jieba
+jieba.load_userdict("ner_data/seg_dict.txt")#加载自定义字典
 # sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 import numpy as np
@@ -225,6 +226,7 @@ def ner_load_data(data_path=None, vector_file="ner_vectors.txt"):
 
 
 def ner_iterator(char_data, tag_data, len_data, batch_size, seg_data):
+    # data中最后一个batch size的数据是缺失的
     data_len = len(char_data)
     batch_len = data_len // batch_size
     lArray = []
@@ -266,8 +268,49 @@ def main():
     """
     Test load_data method and iterator method
     """
+    data_path = "ner_data/"
+    vector_file = "ner_vectors.txt"
+    train_path = os.path.join(data_path, "train_data.txt")
+    dev_path = os.path.join(data_path, "dev_data.txt")
+    test_path = os.path.join(data_path, "test_data.txt")
+    vector_path = os.path.join(data_path, vector_file)
 
+    # NER中暂时不用
+    # bigram_path = os.path.join(data_path, "words_for_training")
+    # dict_path = os.path.join(data_path, "PinyinDict.txt")
 
+    char_to_id, tag_to_id, char_vectors = _ner_build_vocab(vector_path, train_path)
+    # pinyin_dict = _read_pinyin_dict(dict_path)
+    # Save char_dict and tag_dict
+    _save_vocab(char_to_id, os.path.join(data_path, "char_to_id"))
+    _save_vocab(tag_to_id, os.path.join(data_path, "tag_to_id"))
+    print("char dictionary size " + str(len(char_to_id)))
+    print("tag dictionary size " + str(len(tag_to_id)))
+
+    # train_char, train_tag, train_dict, train_len = _file_to_char_ids(train_path, char_to_id, tag_to_id, pinyin_dict)
+    # train_char, train_tag, train_len, train_seg = _ner_file_to_char_ids(train_path, char_to_id, tag_to_id)
+    # print("train dataset: " + str(len(train_char)) + " " + str(len(train_tag)))
+
+    # dev_char, dev_tag, dev_dict, dev_len = _file_to_char_ids(dev_path, char_to_id, tag_to_id, pinyin_dict)
+    dev_char, dev_tag, dev_len, dev_seg = _ner_file_to_char_ids(dev_path, char_to_id, tag_to_id)
+    print("dev dataset: " + str(len(dev_char)) + " " + str(len(dev_tag)))
+
+    # test_char, test_tag, test_dict, test_len = _file_to_char_ids(test_path, char_to_id, tag_to_id, pinyin_dict)
+    # test_char, test_tag, test_len, test_seg = _ner_file_to_char_ids(test_path, char_to_id, tag_to_id)
+    # print("test dataset: " + str(len(test_char)) + " " + str(len(test_tag)))
+    # vocab_size = len(char_to_id)
+    # sums = 0
+    # for l in dev_len:
+    #     sums = sums+l+1
+    # print(sums)
+    print(sum(dev_len))
+    xArray, yArray, lArray, segArray = ner_iterator(dev_char, dev_tag, dev_len, 1, dev_seg)
+    char_sums = 0
+    for l in lArray:
+        char_sums = char_sums+sum(l)
+    print(char_sums)
 
 if __name__ == '__main__':
     main()
+    # test = [0,1,2,3]
+    # print(test[0:5])
