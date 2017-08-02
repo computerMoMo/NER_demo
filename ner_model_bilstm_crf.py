@@ -81,9 +81,11 @@ class Segmenter(object):
         inputs = tf.nn.dropout(inputs, config.keep_prob)
         # 字窗口特征和分词特征
         inputs = tf.reshape(inputs, [batch_size, -1, 5*self.embedding_size + 5*self.seg_embedding_size])
+        self._lstm_inputs = inputs
         # d = tf.reshape(self._dicts, [batch_size, -1, 16])
-
-        self._loss, self._logits, self._trans = _bilstm_model(inputs, self._targets, self._seq_len, config)
+        seg_data_reshape = tf.reshape(self._seg_data, [batch_size, -1, 5])
+        seg_data_reshape = tf.cast(seg_data_reshape, dtype=data_type())
+        self._loss, self._logits, self._trans = _bilstm_model(inputs, self._targets, self._seq_len, config, seg_data_reshape)
 
         with tf.variable_scope("train_ops") as scope:
             # Gradients and SGD update operation for training the model.
@@ -141,6 +143,10 @@ class Segmenter(object):
     def train_op(self):
         return self._train_op
 
+    @property
+    def lstm_inputs(self):
+        return self._lstm_inputs
+
 
 # seg model configuration, set target num, and input vocab_size
 class LargeConfigChinese(object):
@@ -173,7 +179,7 @@ def lstm_cell(size):
                                         reuse=tf.get_variable_scope().reuse)
 
 
-def _bilstm_model(inputs, targets, seq_len, config):
+def _bilstm_model(inputs, targets, seq_len, config, seg_data):
     '''
     @Use BasicLSTMCell, MultiRNNCell method to build LSTM model 
     @return logits, cost and others
@@ -210,16 +216,19 @@ def _bilstm_model(inputs, targets, seq_len, config):
             output = tf.concat(axis=2, values=[forward_output, backward_output])
 
             # outputs is a length T list of output vectors, which is [batch_size*maxlen, 2 * hidden_size]
-        output = tf.reshape(output, [-1, 2 * hidden_size])
+
+        # 直接在CRF层输入加入分词特征
+        output = tf.concat(values=[output, seg_data], axis=-1)
+        output = tf.reshape(output, [-1, 2 * hidden_size+5])
 
         # 加一个tanh激活函数
-        W = tf.get_variable("W", shape=[hidden_size * 2, hidden_size], dtype=data_type())
-        b = tf.get_variable("b", shape=[hidden_size], dtype=data_type(), initializer=tf.zeros_initializer())
-        hidden = tf.tanh(tf.nn.xw_plus_b(output, W, b))#hidden 的size:[-1,hidden_size]
+        # W = tf.get_variable("W", shape=[hidden_size * 2, hidden_size], dtype=data_type())
+        # b = tf.get_variable("b", shape=[hidden_size], dtype=data_type(), initializer=tf.zeros_initializer())
+        # hidden = tf.tanh(tf.nn.xw_plus_b(output, W, b))#hidden 的size:[-1,hidden_size]
 
-        softmax_w = tf.get_variable("softmax_w", [hidden_size, target_num], dtype=data_type())
+        softmax_w = tf.get_variable("softmax_w", [2*hidden_size+5, target_num], dtype=data_type())
         softmax_b = tf.get_variable("softmax_b", [target_num], dtype=data_type())
-        logits = tf.matmul(hidden, softmax_w) + softmax_b
+        logits = tf.matmul(output, softmax_w) + softmax_b
         logits = tf.reshape(logits, [batch_size, -1, target_num])
     # CRF层
     with tf.variable_scope("loss") as scope:
@@ -351,6 +360,24 @@ def ner_evaluate(session, model, char_data, tag_data, len_data, eval_op, batch_s
     return accuracy, total_P, total_R, total_F, per_P, per_R, per_F, loc_P, loc_R, loc_F, org_P, org_R, org_F
 
 
+def debug_tensors(session, model, char_data, tag_data, len_data, eval_op, batch_size, seg_data, verbose=False):
+    xArray, yArray, lArray, segArray = reader.ner_iterator(char_data, tag_data, len_data, batch_size, seg_data)
+
+
+    for x, y, l, seg in zip(xArray, yArray, lArray, segArray):
+        fetches = [model.loss, model.logits, model.trans, model.lstm_inputs]
+        feed_dict = {}
+        feed_dict[model.input_data] = x
+        feed_dict[model.targets] = y
+        feed_dict[model.seq_len] = l
+        feed_dict[model.seg_data] = seg
+        loss, logits, trans, lstm_inputs = session.run(fetches, feed_dict)
+        print(np.asarray(x).shape, " ", np.asarray(y).shape, " ", np.asarray(l).shape, " ", np.asarray(seg).shape)
+        print("logits:", logits.shape)
+        print("lstm inputs:", lstm_inputs.shape)
+        break
+
+
 def ner_generate_results(session, model, char_data, tag_data, len_data, eval_op, batch_size, result_file_name):
     tag_file = codecs.open("ner_data/tag_to_id", encoding="utf-8")
     id_to_tag = dict()
@@ -414,37 +441,41 @@ if __name__ == '__main__':
 
         best_f = 0.0
 
-        for i in range(config.max_max_epoch):
-            m.assign_lr(session, config.learning_rate)
+        #debug
+        m.assign_lr(session, config.learning_rate)
+        debug_tensors(session, m, dev_char, dev_tag, dev_len, tf.no_op(), config.batch_size, dev_seg)
 
-            print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
-            train_perplexity = run_epoch(session, m, train_char, train_tag, train_len, m.train_op,
-                                         config.batch_size, train_seg, verbose=True)
-            dev_accuracy, dev_total_P, dev_total_R, dev_total_F, dev_per_P, dev_per_R, dev_per_F, dev_loc_P, dev_loc_R, dev_loc_F, \
-            dev_org_P, dev_org_R, dev_org_F = ner_evaluate(session, m, dev_char, dev_tag, dev_len, tf.no_op(), config.batch_size, dev_seg)
-            print("Dev Accuray: %f, total P:%f, R:%f, F:%f" % (dev_accuracy, dev_total_P, dev_total_R, dev_total_F))
-            print("Dev PER P:%f, R:%f, F:%f" % (dev_per_P, dev_per_R, dev_per_F))
-            print("Dev LOC P:%f, R:%f, F:%f" % (dev_loc_P, dev_loc_R, dev_loc_F))
-            print("Dev ORG P:%f, R:%f, F:%f" % (dev_org_P, dev_org_R, dev_org_F))
+        # for i in range(config.max_max_epoch):
+        #     m.assign_lr(session, config.learning_rate)
 
-            if dev_total_F > best_f:
-                test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
-                test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_char, test_tag, test_len, tf.no_op(), config.batch_size, test_seg)
-                print("Test Accuray: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
-                print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
-                print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
-                print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
-
-                best_f = dev_total_F
-                checkpoint_path = os.path.join(FLAGS.seg_train_dir, "ner_bilstm.ckpt")
-                m.saver.save(session, checkpoint_path)
-                print("Model Saved...")
-
-        test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
-        test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_char, test_tag, test_len, tf.no_op(), config.batch_size, test_seg)
-        print("Test Accuray: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
-        print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
-        print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
-        print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
+        #     print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
+        #     train_perplexity = run_epoch(session, m, train_char, train_tag, train_len, m.train_op,
+        #                                  config.batch_size, train_seg, verbose=True)
+        #     dev_accuracy, dev_total_P, dev_total_R, dev_total_F, dev_per_P, dev_per_R, dev_per_F, dev_loc_P, dev_loc_R, dev_loc_F, \
+        #     dev_org_P, dev_org_R, dev_org_F = ner_evaluate(session, m, dev_char, dev_tag, dev_len, tf.no_op(), config.batch_size, dev_seg)
+        #     print("Dev Accuray: %f, total P:%f, R:%f, F:%f" % (dev_accuracy, dev_total_P, dev_total_R, dev_total_F))
+        #     print("Dev PER P:%f, R:%f, F:%f" % (dev_per_P, dev_per_R, dev_per_F))
+        #     print("Dev LOC P:%f, R:%f, F:%f" % (dev_loc_P, dev_loc_R, dev_loc_F))
+        #     print("Dev ORG P:%f, R:%f, F:%f" % (dev_org_P, dev_org_R, dev_org_F))
+        #
+        #     if dev_total_F > best_f:
+        #         test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
+        #         test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_char, test_tag, test_len, tf.no_op(), config.batch_size, test_seg)
+        #         print("Test Accuray: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
+        #         print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
+        #         print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
+        #         print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
+        #
+        #         best_f = dev_total_F
+        #         checkpoint_path = os.path.join(FLAGS.seg_train_dir, "ner_bilstm.ckpt")
+        #         m.saver.save(session, checkpoint_path)
+        #         print("Model Saved...")
+        #
+        # test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
+        # test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_char, test_tag, test_len, tf.no_op(), config.batch_size, test_seg)
+        # print("Test Accuray: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
+        # print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
+        # print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
+        # print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
 
         # ner_generate_results(session, m, test_char, test_tag, test_len, tf.no_op(), config.batch_size, "ner_data/test_tag_result.txt")
