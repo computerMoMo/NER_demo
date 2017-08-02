@@ -442,40 +442,40 @@ if __name__ == '__main__':
         best_f = 0.0
 
         #debug
-        m.assign_lr(session, config.learning_rate)
-        debug_tensors(session, m, dev_char, dev_tag, dev_len, tf.no_op(), config.batch_size, dev_seg)
+        # m.assign_lr(session, config.learning_rate)
+        # debug_tensors(session, m, dev_char, dev_tag, dev_len, tf.no_op(), config.batch_size, dev_seg)
 
-        # for i in range(config.max_max_epoch):
-        #     m.assign_lr(session, config.learning_rate)
+        for i in range(config.max_max_epoch):
+            m.assign_lr(session, config.learning_rate)
 
-        #     print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
-        #     train_perplexity = run_epoch(session, m, train_char, train_tag, train_len, m.train_op,
-        #                                  config.batch_size, train_seg, verbose=True)
-        #     dev_accuracy, dev_total_P, dev_total_R, dev_total_F, dev_per_P, dev_per_R, dev_per_F, dev_loc_P, dev_loc_R, dev_loc_F, \
-        #     dev_org_P, dev_org_R, dev_org_F = ner_evaluate(session, m, dev_char, dev_tag, dev_len, tf.no_op(), config.batch_size, dev_seg)
-        #     print("Dev Accuray: %f, total P:%f, R:%f, F:%f" % (dev_accuracy, dev_total_P, dev_total_R, dev_total_F))
-        #     print("Dev PER P:%f, R:%f, F:%f" % (dev_per_P, dev_per_R, dev_per_F))
-        #     print("Dev LOC P:%f, R:%f, F:%f" % (dev_loc_P, dev_loc_R, dev_loc_F))
-        #     print("Dev ORG P:%f, R:%f, F:%f" % (dev_org_P, dev_org_R, dev_org_F))
-        #
-        #     if dev_total_F > best_f:
-        #         test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
-        #         test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_char, test_tag, test_len, tf.no_op(), config.batch_size, test_seg)
-        #         print("Test Accuray: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
-        #         print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
-        #         print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
-        #         print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
-        #
-        #         best_f = dev_total_F
-        #         checkpoint_path = os.path.join(FLAGS.seg_train_dir, "ner_bilstm.ckpt")
-        #         m.saver.save(session, checkpoint_path)
-        #         print("Model Saved...")
-        #
-        # test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
-        # test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_char, test_tag, test_len, tf.no_op(), config.batch_size, test_seg)
-        # print("Test Accuray: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
-        # print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
-        # print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
-        # print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
+            print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
+            train_perplexity = run_epoch(session, m, train_char, train_tag, train_len, m.train_op,
+                                         config.batch_size, train_seg, verbose=True)
+            dev_accuracy, dev_total_P, dev_total_R, dev_total_F, dev_per_P, dev_per_R, dev_per_F, dev_loc_P, dev_loc_R, dev_loc_F, \
+            dev_org_P, dev_org_R, dev_org_F = ner_evaluate(session, m, dev_char, dev_tag, dev_len, tf.no_op(), config.batch_size, dev_seg)
+            print("Dev Accuray: %f, total P:%f, R:%f, F:%f" % (dev_accuracy, dev_total_P, dev_total_R, dev_total_F))
+            print("Dev PER P:%f, R:%f, F:%f" % (dev_per_P, dev_per_R, dev_per_F))
+            print("Dev LOC P:%f, R:%f, F:%f" % (dev_loc_P, dev_loc_R, dev_loc_F))
+            print("Dev ORG P:%f, R:%f, F:%f" % (dev_org_P, dev_org_R, dev_org_F))
+
+            if dev_total_F > best_f:
+                test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
+                test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_char, test_tag, test_len, tf.no_op(), config.batch_size, test_seg)
+                print("Test Accuray: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
+                print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
+                print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
+                print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
+
+                best_f = dev_total_F
+                checkpoint_path = os.path.join(FLAGS.seg_train_dir, "ner_bilstm.ckpt")
+                m.saver.save(session, checkpoint_path)
+                print("Model Saved...")
+
+        test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
+        test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_char, test_tag, test_len, tf.no_op(), config.batch_size, test_seg)
+        print("Test Accuray: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
+        print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
+        print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
+        print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
 
         # ner_generate_results(session, m, test_char, test_tag, test_len, tf.no_op(), config.batch_size, "ner_data/test_tag_result.txt")
