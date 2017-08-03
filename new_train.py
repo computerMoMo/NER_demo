@@ -90,7 +90,10 @@ class Segmenter(object):
         inputs = tf.nn.embedding_lookup(self.embedding, self._input_data)
         seg_inputs = tf.nn.embedding_lookup(self.seg_embedding, self._seg_data)
         inputs = tf.concat([inputs, seg_inputs], axis=-1)
-        inputs = tf.nn.dropout(inputs, config.keep_prob)
+
+        self._dropout_keep_prob = tf.placeholder(dtype=tf.float32, name="Dropout")
+        inputs = tf.nn.dropout(inputs, self._dropout_keep_prob)
+
         # 字窗口特征和分词特征
         inputs = tf.reshape(inputs, [batch_size, -1, self.embedding_size + self.seg_embedding_size])
         self._lstm_inputs = inputs
@@ -154,6 +157,10 @@ class Segmenter(object):
     @property
     def lstm_inputs(self):
         return self._lstm_inputs
+
+    @property
+    def dropout_keep_prob(self):
+        return self._dropout_keep_prob
 
 
 # seg model configuration, set target num, and input vocab_size
@@ -262,6 +269,7 @@ def run_epoch(session, model, data, eval_op, batch_size, verbose=False):
         feed_dict[model.targets] = y
         feed_dict[model.seq_len] = l
         feed_dict[model.seg_data] = seg
+        feed_dict[model.dropout_keep_prob] = FLAGS.keep_prob
         loss, logits, _ = session.run(fetches, feed_dict)
         losses += loss
         iters += 1
@@ -296,6 +304,7 @@ def ner_evaluate(session, model, data, eval_op, batch_size, tag_to_id ,verbose=F
         feed_dict[model.targets] = y
         feed_dict[model.seq_len] = l
         feed_dict[model.seg_data] = seg
+        feed_dict[model.dropout_keep_prob] = 1.0#evaluate的时候keep设置为1
         loss, logits, trans = session.run(fetches, feed_dict)
 
         for logits_, y_, l_ in zip(logits, y, l):
@@ -391,35 +400,27 @@ def debug_tensors(session, model, data, eval_op, batch_size, verbose=False):
         break
 
 
-def ner_generate_results(session, model, data, eval_op, batch_size, result_file_name):
-    tag_file = codecs.open("ner_data/tag_to_id", encoding="utf-8")
-    id_to_tag = dict()
-    for line in tag_file:
-        line_list = line.strip().split('\t')
-        if len(line_list) == 2:
-            id_to_tag[int(line_list[1])] = line_list[0]
-    tag_file.close()
+def ner_generate_results(session, model, data, eval_op, batch_size, result_file_name, id_to_tag):
     result_file_writer = codecs.open(result_file_name, encoding="utf-8", mode='w')
+    result_file_writer.write("char\tpre_label\tgold_label\n")
     xArray, yArray, lArray, segArray, sentArray = data_iterator(data, FLAGS.batch_size)
-    for x, y, l, seg in zip(xArray, yArray, lArray, segArray):
+    for x, y, l, seg, sent in zip(xArray, yArray, lArray, segArray, sentArray):
         fetches = [model.loss, model.logits, model.trans]
         feed_dict = {}
         feed_dict[model.input_data] = x
         feed_dict[model.targets] = y
         feed_dict[model.seq_len] = l
         feed_dict[model.seg_data] = seg
+        feed_dict[model.dropout_keep_prob] = 1.0  # evaluate的时候keep设置为1
         loss, logits, trans = session.run(fetches, feed_dict)
 
-        for logits_, y_, l_ in zip(logits, y, l):
+        for logits_, y_, l_, char_ in zip(logits, y, l, sent):
             logits_ = logits_[:l_]
             y_ = y_[:l_]
-
             #crf decode
             viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(logits_, trans)
-            # for i in range(0, len(y_)):
-            #     result_file_writer.write(str(id_to_tag[int(viterbi_sequence[i])]) + "\n")
-            for pre_tag in viterbi_sequence:
-                result_file_writer.write(str(id_to_tag[int(pre_tag)]) + "\n")
+            for pre_tag, gold_tag in zip(viterbi_sequence, y_):
+                result_file_writer.write(str(char_)+"\t"+str(id_to_tag[int(pre_tag)])+"\t"+str(id_to_tag[int(gold_tag)])+"\n")
             result_file_writer.write("\n")
     result_file_writer.close()
 
@@ -522,4 +523,5 @@ if __name__ == '__main__':
         print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
         print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
         print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
-        # ner_generate_results(session, m, dev_char, dev_tag, dev_len, tf.no_op(), config.batch_size, "ner_data/test_tag_result.txt", dev_seg)
+
+        # ner_generate_results(session, m, test_data, tf.no_op(), config.batch_size, "ner_data/test_tag_result.txt", id_to_tag)
