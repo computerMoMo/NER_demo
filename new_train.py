@@ -305,12 +305,12 @@ def ner_evaluate(session, model, data, eval_op, batch_size, tag_to_id ,verbose=F
             #crf decode
             viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(logits_, trans)
 
-            E_PER_id = tag_to_id("E-PER")
-            S_PER_id = tag_to_id("S-PER")
-            E_LOC_id = tag_to_id("E-LOC")
-            S_LOC_id = tag_to_id("S-LOC")
-            E_ORG_id = tag_to_id("E-ORG")
-            S_ORG_id = tag_to_id("S-ORG")
+            E_PER_id = tag_to_id["E-PER"]
+            S_PER_id = tag_to_id["S-PER"]
+            E_LOC_id = tag_to_id["E-LOC"]
+            S_LOC_id = tag_to_id["S-LOC"]
+            E_ORG_id = tag_to_id["E-ORG"]
+            S_ORG_id = tag_to_id["S-ORG"]
 
             per_yp_wordnum += viterbi_sequence.count(E_PER_id) + viterbi_sequence.count(S_PER_id)
             per_yt_wordnum += y_.count(S_PER_id) + y_.count(E_PER_id)
