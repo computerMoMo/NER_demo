@@ -273,7 +273,7 @@ def run_epoch(session, model, data, eval_op, batch_size, verbose=False):
     return np.exp(losses / iters)
 
 
-def ner_evaluate(session, model, data, eval_op, batch_size, verbose=False):
+def ner_evaluate(session, model, data, eval_op, batch_size, tag_to_id ,verbose=False):
     correct_labels = 0
     total_labels = 0
 
@@ -305,19 +305,26 @@ def ner_evaluate(session, model, data, eval_op, batch_size, verbose=False):
             #crf decode
             viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(logits_, trans)
 
-            per_yp_wordnum += viterbi_sequence.count(7) + viterbi_sequence.count(8)
-            per_yt_wordnum += (y_ == 7).sum() + (y_ == 8).sum()
-            org_yp_wordnum += viterbi_sequence.count(3) + viterbi_sequence.count(4)
-            org_yt_wordnum += (y_ == 3).sum() + (y_ == 4).sum()
-            loc_yp_wordnum += viterbi_sequence.count(11) + viterbi_sequence.count(12)
-            loc_yt_wordnum += (y_ == 11).sum() + (y_ == 12).sum()
+            E_PER_id = tag_to_id("E-PER")
+            S_PER_id = tag_to_id("S-PER")
+            E_LOC_id = tag_to_id("E-LOC")
+            S_LOC_id = tag_to_id("S-LOC")
+            E_ORG_id = tag_to_id("E-ORG")
+            S_ORG_id = tag_to_id("S-ORG")
+
+            per_yp_wordnum += viterbi_sequence.count(E_PER_id) + viterbi_sequence.count(S_PER_id)
+            per_yt_wordnum += y_.count(S_PER_id) + y_.count(E_PER_id)
+            org_yp_wordnum += viterbi_sequence.count(E_ORG_id) + viterbi_sequence.count(S_ORG_id)
+            org_yt_wordnum += y_.count(E_ORG_id) + y_.count(S_ORG_id)
+            loc_yp_wordnum += viterbi_sequence.count(E_LOC_id) + viterbi_sequence.count(S_LOC_id)
+            loc_yt_wordnum += y_.count(E_LOC_id) + y_.count(S_LOC_id)
             correct_labels += np.sum(np.equal(viterbi_sequence, y_))
             total_labels += l_
 
             start = 0
             for i in range(0, len(y_)):
                 # 计算PER
-                if y_[i] == 7 or y_[i] == 8:
+                if y_[i] == E_PER_id or y_[i] == S_PER_id:
                     flag = True
                     for j in range(start, i + 1):
                         if y_[j] != viterbi_sequence[j]:
@@ -327,7 +334,7 @@ def ner_evaluate(session, model, data, eval_op, batch_size, verbose=False):
                         per_cor_num += 1
                     start = i + 1
                 # 计算ORG
-                elif y_[i] == 3 or y_[i] == 4:
+                elif y_[i] == E_ORG_id or y_[i] == S_ORG_id:
                     flag = True
                     for j in range(start, i + 1):
                         if y_[j] != viterbi_sequence[j]:
@@ -337,7 +344,7 @@ def ner_evaluate(session, model, data, eval_op, batch_size, verbose=False):
                         org_cor_num += 1
                     start = i + 1
                 # 计算LOC
-                elif y_[i] == 11 or y_[i] == 12:
+                elif y_[i] == E_LOC_id or y_[i] == S_LOC_id:
                     flag = True
                     for j in range(start, i+1):
                         if y_[j] != viterbi_sequence[j]:
