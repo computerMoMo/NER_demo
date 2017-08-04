@@ -27,7 +27,7 @@ sys.path.append(pkg_path)
 
 file_path = os.path.dirname(os.path.abspath(__file__))  # ../nlp_proj/seg/
 data_path = os.path.join(file_path, "ner_data")  # path to find corpus vocab file
-train_dir = os.path.join(file_path, "ner_new_ckpt")  # path to find model saved checkpoint file
+train_dir = os.path.join(file_path, "ner_new_train2.0")  # path to find model saved checkpoint file
 
 flags = tf.flags
 logging = tf.logging
@@ -50,6 +50,7 @@ flags.DEFINE_float("keep_prob", 0.8, "drop out keep prob")
 flags.DEFINE_string("train_file",   os.path.join(data_path, "train_data.txt"),  "Path for train data")
 flags.DEFINE_string("dev_file",     os.path.join(data_path, "dev_data.txt"),    "Path for dev data")
 flags.DEFINE_string("test_file",    os.path.join(data_path, "test_data.txt"),   "Path for test data")
+flags.DEFINE_string("test_result_file", os.path.join(data_path, "test_predict_result.txt"), "Path for result")
 flags.DEFINE_boolean("zeros",       False,      "Wither replace digits with zero")
 flags.DEFINE_boolean("lower",       True,       "Wither lower case")
 flags.DEFINE_boolean("pre_emb",     True,       "Wither use pre-trained embedding")
@@ -313,11 +314,13 @@ def ner_evaluate(session, model, data, eval_op, batch_size, tag_to_id ,verbose=F
 
             #crf decode
             viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(logits_, trans)
-
+            B_PER_id = tag_to_id["B-PER"]
             E_PER_id = tag_to_id["E-PER"]
             S_PER_id = tag_to_id["S-PER"]
+            B_LOC_id = tag_to_id["B-LOC"]
             E_LOC_id = tag_to_id["E-LOC"]
             S_LOC_id = tag_to_id["S-LOC"]
+            B_ORG_id = tag_to_id["B-ORG"]
             E_ORG_id = tag_to_id["E-ORG"]
             S_ORG_id = tag_to_id["S-ORG"]
 
@@ -333,35 +336,47 @@ def ner_evaluate(session, model, data, eval_op, batch_size, tag_to_id ,verbose=F
             start = 0
             for i in range(0, len(y_)):
                 # 计算PER
-                if y_[i] == E_PER_id or y_[i] == S_PER_id:
+                if y_[i] == S_PER_id:
+                    if y_[i] == viterbi_sequence[i]:
+                        per_cor_num += 1
+                elif y_[i] == B_PER_id:
                     flag = True
-                    for j in range(start, i + 1):
-                        if y_[j] != viterbi_sequence[j]:
+                    while True:
+                        if y_[i] != viterbi_sequence[i]:
                             flag = False
+                        if y_[i] == E_PER_id:
                             break
+                        i += 1
                     if flag:
                         per_cor_num += 1
-                    start = i + 1
                 # 计算ORG
-                elif y_[i] == E_ORG_id or y_[i] == S_ORG_id:
+                elif y_[i] == S_ORG_id:
+                    if y_[i] == viterbi_sequence[i]:
+                        org_cor_num += 1
+                elif y_[i] == B_ORG_id:
                     flag = True
-                    for j in range(start, i + 1):
-                        if y_[j] != viterbi_sequence[j]:
+                    while True:
+                        if y_[i] != viterbi_sequence[i]:
                             flag = False
+                        if y_[i] == E_ORG_id:
                             break
+                        i += 1
                     if flag:
                         org_cor_num += 1
-                    start = i + 1
                 # 计算LOC
-                elif y_[i] == E_LOC_id or y_[i] == S_LOC_id:
+                elif y_[i] == S_LOC_id:
+                    if y_[i] == viterbi_sequence[i]:
+                        loc_cor_num += 1
+                elif y_[i] == B_LOC_id:
                     flag = True
-                    for j in range(start, i+1):
-                        if y_[j] != viterbi_sequence[j]:
+                    while True:
+                        if y_[i] != viterbi_sequence[i]:
                             flag = False
+                        if y_[i] == E_LOC_id:
                             break
+                        i += 1
                     if flag:
                         loc_cor_num += 1
-                    start = i + 1
     per_P = per_cor_num/float(per_yp_wordnum)
     per_R = per_cor_num/float(per_yt_wordnum)
     per_F = 2 * per_P * per_R / (per_P + per_R)
@@ -402,7 +417,7 @@ def debug_tensors(session, model, data, eval_op, batch_size, verbose=False):
 
 def ner_generate_results(session, model, data, eval_op, batch_size, result_file_name, id_to_tag):
     result_file_writer = codecs.open(result_file_name, encoding="utf-8", mode='w')
-    result_file_writer.write("char\tpre_label\tgold_label\n")
+    result_file_writer.write("char\tgold_label\tpre_label\n")
     xArray, yArray, lArray, segArray, sentArray = data_iterator(data, FLAGS.batch_size)
     for x, y, l, seg, sent in zip(xArray, yArray, lArray, segArray, sentArray):
         fetches = [model.loss, model.logits, model.trans]
@@ -417,10 +432,11 @@ def ner_generate_results(session, model, data, eval_op, batch_size, result_file_
         for logits_, y_, l_, char_ in zip(logits, y, l, sent):
             logits_ = logits_[:l_]
             y_ = y_[:l_]
+            char_ = char_[:l_]
             #crf decode
             viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(logits_, trans)
-            for pre_tag, gold_tag in zip(viterbi_sequence, y_):
-                result_file_writer.write(str(char_)+"\t"+str(id_to_tag[int(pre_tag)])+"\t"+str(id_to_tag[int(gold_tag)])+"\n")
+            for pre_tag, gold_tag, test_char in zip(viterbi_sequence, y_, char_):
+                result_file_writer.write(str(test_char)+"\t"+str(id_to_tag[int(gold_tag)])+"\t"+str(id_to_tag[int(pre_tag)])+"\n")
             result_file_writer.write("\n")
     result_file_writer.close()
 
@@ -523,5 +539,5 @@ if __name__ == '__main__':
         print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
         print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
         print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
-
-        # ner_generate_results(session, m, test_data, tf.no_op(), config.batch_size, "ner_data/test_tag_result.txt", id_to_tag)
+        print("save test data predict results")
+        ner_generate_results(session, m, test_data, tf.no_op(), batch_size=1, result_file_name=FLAGS.test_result_file, id_to_tag=id_to_tag)
