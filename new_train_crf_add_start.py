@@ -27,7 +27,7 @@ sys.path.append(pkg_path)
 
 file_path = os.path.dirname(os.path.abspath(__file__))  # ../nlp_proj/seg/
 data_path = os.path.join(file_path, "ner_data")  # path to find corpus vocab file
-train_dir = os.path.join(file_path, "ner_new_train2.0")  # path to find model saved checkpoint file
+train_dir = os.path.join(file_path, "ner_new_train2.0_crf_feature")  # path to find model saved checkpoint file
 
 flags = tf.flags
 logging = tf.logging
@@ -80,6 +80,7 @@ class Segmenter(object):
         self._targets = tf.placeholder(tf.int32, [batch_size, None])
         self._seq_len = tf.placeholder(tf.int32, [batch_size])
         self._seg_data = tf.placeholder(tf.int32, [batch_size, None])
+        self._max_seq_len = tf.placeholder(tf.int32)
 
         with tf.device("/cpu:0"):
             if init_embedding is None:
@@ -101,7 +102,7 @@ class Segmenter(object):
         # d = tf.reshape(self._dicts, [batch_size, -1, 16])
         seg_data_reshape = tf.reshape(self._seg_data, [batch_size, -1, 1])
         seg_data_reshape = tf.cast(seg_data_reshape, dtype=data_type())
-        self._loss, self._logits, self._trans = _bilstm_model(inputs, self._targets, self._seq_len, config, seg_data_reshape)
+        self._loss, self._logits, self._trans, self._seq_len_plus1 = _bilstm_model(inputs, self._targets, self._seq_len, config, seg_data_reshape, self._max_seq_len)
 
         with tf.variable_scope("train_ops") as scope:
             # Gradients and SGD update operation for training the model.
@@ -163,6 +164,14 @@ class Segmenter(object):
     def dropout_keep_prob(self):
         return self._dropout_keep_prob
 
+    @property
+    def max_seq_len(self):
+        return self._max_seq_len
+
+    @property
+    def seq_len_plus1(self):
+        return self._seq_len_plus1
+
 
 # seg model configuration, set target num, and input vocab_size
 class LargeConfigChinese(object):
@@ -195,7 +204,7 @@ def lstm_cell(size):
                                         reuse=tf.get_variable_scope().reuse)
 
 
-def _bilstm_model(inputs, targets, seq_len, config, seg_data):
+def _bilstm_model(inputs, targets, seq_len, config, seg_data, max_seq_len):
     '''
     @Use BasicLSTMCell, MultiRNNCell method to build LSTM model 
     @return logits, cost and others
@@ -252,14 +261,14 @@ def _bilstm_model(inputs, targets, seq_len, config, seg_data):
         small = -1000.0
         # pad logits for crf loss
         start_logits = tf.concat([small * tf.ones(shape=[batch_size, 1, target_num]), tf.zeros(shape=[batch_size, 1, 1])], axis=-1)
-        pad_logits = tf.cast(small * tf.ones([batch_size, logits.get_shape[1], 1]), tf.float32)
+        pad_logits = tf.cast(small * tf.ones([batch_size, max_seq_len, 1]), tf.float32)
         new_logits = tf.concat([logits, pad_logits], axis=-1)
         new_logits = tf.concat([start_logits, new_logits], axis=1)
         new_targets = tf.concat([tf.cast(target_num * tf.ones([batch_size, 1]), tf.int32), targets], axis=-1)
         log_likelihood, transition_params = tf.contrib.crf.crf_log_likelihood(
             new_logits, new_targets, seq_len+1)
         loss = tf.reduce_mean(-log_likelihood)
-    return loss, logits, transition_params
+    return loss, new_logits, transition_params, seq_len+1
 
 
 def run_epoch(session, model, data, eval_op, batch_size, verbose=False):
@@ -278,6 +287,7 @@ def run_epoch(session, model, data, eval_op, batch_size, verbose=False):
         feed_dict[model.seq_len] = l
         feed_dict[model.seg_data] = seg
         feed_dict[model.dropout_keep_prob] = FLAGS.keep_prob
+        feed_dict[model.max_seq_len] = max(l)
         loss, logits, _ = session.run(fetches, feed_dict)
         losses += loss
         iters += 1
@@ -313,22 +323,15 @@ def ner_evaluate(session, model, data, eval_op, batch_size, tag_to_id, verbose=F
         feed_dict[model.seq_len] = l
         feed_dict[model.seg_data] = seg
         feed_dict[model.dropout_keep_prob] = 1.0#evaluate的时候keep设置为1
+        feed_dict[model.max_seq_len] = max(l)
         loss, logits, trans = session.run(fetches, feed_dict)
-        small = -1000.0
-        start = np.asarray([[small] * FLAGS.target_num + [0]])
         for logits_, y_, l_ in zip(logits, y, l):
-            logits_ = logits_[:l_]
+            logits_ = logits_[:l_+1]
             y_ = y_[:l_]
 
             #crf decode
-            # score = score[:length]
-            pad = small * np.ones([l_, 1])
-            new_logits_ = np.concatenate([logits_, pad], axis=1)
-            new_logits_ = np.concatenate([start, new_logits_], axis=0)
-
-            viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(new_logits_, trans)
+            viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(logits_, trans)
             viterbi_sequence = viterbi_sequence[1:]
-
             B_PER_id = tag_to_id["B-PER"]
             E_PER_id = tag_to_id["E-PER"]
             S_PER_id = tag_to_id["S-PER"]
@@ -415,18 +418,20 @@ def ner_evaluate(session, model, data, eval_op, batch_size, tag_to_id, verbose=F
 def debug_tensors(session, model, data, eval_op, batch_size, tag_to_id, verbose=False):
     xArray, yArray, lArray, segArray, sentArray = data_iterator(data, FLAGS.batch_size)
     for x, y, l, seg in zip(xArray, yArray, lArray, segArray):
-        fetches = [model.loss, model.logits, model.trans, model.lstm_inputs, model.targets, model.seq_len]
+        fetches = [model.loss, model.logits, model.trans, model.lstm_inputs, model.targets, model.seq_len, model.seq_len_plus1]
         feed_dict = {}
         feed_dict[model.input_data] = x
         feed_dict[model.targets] = y
         feed_dict[model.seq_len] = l
         feed_dict[model.seg_data] = seg
         feed_dict[model.dropout_keep_prob] = FLAGS.keep_prob
-        loss, logits, trans, lstm_inputs, targets, seq_len = session.run(fetches, feed_dict)
+        feed_dict[model.max_seq_len] = max(l)
+        loss, logits, trans, lstm_inputs, targets, seq_len, seq_len_plus1 = session.run(fetches, feed_dict)
         print(np.asarray(x).shape, " ", np.asarray(y).shape, " ", np.asarray(l).shape, " ", np.asarray(seg).shape)
         print("logits shape:", logits.shape)
         print("targets shape:", targets.shape)
-        print("seq len:", seq_len+1)
+        print("seq len:", seq_len)
+        print("seq len plus 1:", seq_len_plus1)
         # print("lstm inputs shape:", lstm_inputs.shape)
         print("real len:", l[0])
         # print(lstm_inputs[0][0])
@@ -524,6 +529,8 @@ if __name__ == '__main__':
         # debug
         # m.assign_lr(session, config.learning_rate)
         # debug_tensors(session, m, train_data, tf.no_op(), config.batch_size, tag_to_id)
+
+        # ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
 
         for i in range(config.max_max_epoch):
             m.assign_lr(session, config.learning_rate)
