@@ -7,6 +7,7 @@ import random
 import numpy as np
 import jieba
 jieba.initialize()
+jieba.load_userdict("ner_data/seg_dict.txt")#载入自定义字典
 
 
 def create_dico(item_list):
