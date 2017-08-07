@@ -42,87 +42,6 @@ def zero_digits(s):
     return re.sub('\d', '0', s)
 
 
-def iob2(tags):
-    """
-    Check that tags have a valid IOB format.
-    Tags in IOB1 format are converted to IOB2.
-    """
-    for i, tag in enumerate(tags):
-        if tag == 'O':
-            continue
-        split = tag.split('-')
-        if len(split) != 2 or split[0] not in ['I', 'B']:
-            return False
-        if split[0] == 'B':
-            continue
-        elif i == 0 or tags[i - 1] == 'O':  # conversion IOB1 to IOB2
-            tags[i] = 'B' + tag[1:]
-        elif tags[i - 1][1:] == tag[1:]:
-            continue
-        else:  # conversion IOB1 to IOB2
-            tags[i] = 'B' + tag[1:]
-    return True
-
-
-def iob_iobes(tags):
-    """
-    IOB -> IOBES
-    """
-    new_tags = []
-    for i, tag in enumerate(tags):
-        if tag == 'O':
-            new_tags.append(tag)
-        elif tag.split('-')[0] == 'B':
-            if i + 1 != len(tags) and \
-               tags[i + 1].split('-')[0] == 'I':
-                new_tags.append(tag)
-            else:
-                new_tags.append(tag.replace('B-', 'S-'))
-        elif tag.split('-')[0] == 'I':
-            if i + 1 < len(tags) and \
-                    tags[i + 1].split('-')[0] == 'I':
-                new_tags.append(tag)
-            else:
-                new_tags.append(tag.replace('I-', 'E-'))
-        else:
-            raise Exception('Invalid IOB format!')
-    return new_tags
-
-
-def iobes_iob(tags):
-    """
-    IOBES -> IOB
-    """
-    new_tags = []
-    for i, tag in enumerate(tags):
-        if tag.split('-')[0] == 'B':
-            new_tags.append(tag)
-        elif tag.split('-')[0] == 'I':
-            new_tags.append(tag)
-        elif tag.split('-')[0] == 'S':
-            new_tags.append(tag.replace('S-', 'B-'))
-        elif tag.split('-')[0] == 'E':
-            new_tags.append(tag.replace('E-', 'I-'))
-        elif tag.split('-')[0] == 'O':
-            new_tags.append(tag)
-        else:
-            raise Exception('Invalid format!')
-    return new_tags
-
-
-def insert_singletons(words, singletons, p=0.5):
-    """
-    Replace singletons by the unknown word with a probability p.
-    """
-    new_words = []
-    for word in words:
-        if word in singletons and np.random.uniform() < p:
-            new_words.append(0)
-        else:
-            new_words.append(word)
-    return new_words
-
-
 def get_seg_features(string):
     """
     Segment text with jieba
@@ -142,69 +61,7 @@ def get_seg_features(string):
     return seg_feature
 
 
-def create_input(data):
-    """
-    Take sentence data and return an input for
-    the training or the evaluation function.
-    """
-    inputs = list()
-    inputs.append(data['chars'])
-    inputs.append(data["segs"])
-    inputs.append(data['tags'])
-    return inputs
-
-
-def load_word2vec(emb_path, id_to_word, word_dim, old_weights):
-    """
-    Load word embedding from pre-trained file
-    embedding size must match
-    """
-    new_weights = old_weights
-    print('Loading pretrained embeddings from {}...'.format(emb_path))
-    pre_trained = {}
-    emb_invalid = 0
-    for i, line in enumerate(codecs.open(emb_path, 'r', 'utf-8')):
-        line = line.rstrip().split()
-        if len(line) == word_dim + 1:
-            pre_trained[line[0]] = np.array(
-                [float(x) for x in line[1:]]
-            ).astype(np.float32)
-        else:
-            emb_invalid += 1
-    if emb_invalid > 0:
-        print('WARNING: %i invalid lines' % emb_invalid)
-    c_found = 0
-    c_lower = 0
-    c_zeros = 0
-    n_words = len(id_to_word)
-    # Lookup table initialization
-    for i in range(n_words):
-        word = id_to_word[i]
-        if word in pre_trained:
-            new_weights[i] = pre_trained[word]
-            c_found += 1
-        elif word.lower() in pre_trained:
-            new_weights[i] = pre_trained[word.lower()]
-            c_lower += 1
-        elif re.sub('\d', '0', word.lower()) in pre_trained:
-            new_weights[i] = pre_trained[
-                re.sub('\d', '0', word.lower())
-            ]
-            c_zeros += 1
-    print('Loaded %i pretrained embeddings.' % len(pre_trained))
-    print('%i / %i (%.4f%%) words have been initialized with '
-          'pretrained embeddings.' % (
-        c_found + c_lower + c_zeros, n_words,
-        100. * (c_found + c_lower + c_zeros) / n_words)
-    )
-    print('%i found directly, %i after lowercasing, '
-          '%i after lowercasing + zero.' % (
-        c_found, c_lower, c_zeros
-    ))
-    return new_weights
-
-
-def new_load_word2vec(emb_path, id_to_word, word_dim):
+def load_word2vec(emb_path, id_to_word, word_dim):
     new_weights = np.zeros(shape=[len(id_to_word), word_dim], dtype=np.float32)
     print('Loading pretrained embeddings from {}...'.format(emb_path))
     pre_trained = {}
@@ -266,106 +123,6 @@ def full_to_half(s):
     return ''.join(n)
 
 
-def cut_to_sentence(text):
-    """
-    Cut text to sentences 
-    """
-    sentence = []
-    sentences = []
-    len_p = len(text)
-    pre_cut = False
-    for idx, word in enumerate(text):
-        sentence.append(word)
-        cut = False
-        if pre_cut:
-            cut=True
-            pre_cut=False
-        if word in u"。;!?\n":
-            cut = True
-            if len_p > idx+1:
-                if text[idx+1] in ".。”\"\'“”‘’?!":
-                    cut = False
-                    pre_cut=True
-
-        if cut:
-            sentences.append(sentence)
-            sentence = []
-    if sentence:
-        sentences.append("".join(list(sentence)))
-    return sentences
-
-
-def replace_html(s):
-    s = s.replace('&quot;','"')
-    s = s.replace('&amp;','&')
-    s = s.replace('&lt;','<')
-    s = s.replace('&gt;','>')
-    s = s.replace('&nbsp;',' ')
-    s = s.replace("&ldquo;", "“")
-    s = s.replace("&rdquo;", "”")
-    s = s.replace("&mdash;","")
-    s = s.replace("\xa0", " ")
-    return(s)
-
-
-def input_from_line(line, char_to_id):
-    """
-    Take sentence data and return an input for
-    the training or the evaluation function.
-    """
-    line = full_to_half(line)
-    line = replace_html(line)
-    inputs = list()
-    inputs.append([line])
-    line.replace(" ", "$")
-    inputs.append([[char_to_id[char] if char in char_to_id else char_to_id["<UNK>"]
-                   for char in line]])
-    inputs.append([get_seg_features(line)])
-    inputs.append([[]])
-    return inputs
-
-
-class BatchManager(object):
-
-    def __init__(self, data,  batch_size, sort=True):
-        self.batch_data = self.sort_and_pad(data, batch_size, sort)
-        self.len_data = len(self.batch_data)
-
-    # 按照string(句子)的长度排序
-    def sort_and_pad(self, data, batch_size, sort):
-        num_batch = int(math.ceil(len(data) /batch_size))#ceil:取上整
-        if sort:
-            sorted_data = sorted(data, key=lambda x: len(x[0]))
-        else:
-            sorted_data = data
-        batch_data = list()
-        for i in range(num_batch):
-            batch_data.append(self.pad_data(sorted_data[i*batch_size : (i+1)*batch_size]))
-        return batch_data
-
-    @staticmethod
-    def pad_data(data):
-        strings = []
-        chars = []
-        segs = []
-        targets = []
-        max_length = max([len(sentence[0]) for sentence in data])
-        for line in data:
-            string, char, seg, target = line
-            padding = [0] * (max_length - len(string))#补零
-            strings.append(string + padding)
-            chars.append(char + padding)
-            segs.append(seg + padding)
-            targets.append(target + padding)
-        return [strings, chars, segs, targets]
-
-    def iter_batch(self, shuffle=False):
-        if shuffle:
-            random.shuffle(self.batch_data)
-        for idx in range(self.len_data):
-            yield self.batch_data[idx]
-
-
 def data_iterator(data, batch_size, shuffle=False):
     data_len = len(data)
     # data中最后一个batch size的数据是缺失的
@@ -374,16 +131,16 @@ def data_iterator(data, batch_size, shuffle=False):
     xArray = []
     yArray = []
     segArray = []
-    sentArray=[]
+    sentArray = []
 
     for i in range(num_batchs):
         batch_data = data[i*batch_size : (i+1)*batch_size]#在data中取batch size个data line
 
-        l=[]
-        x=[]
-        y=[]
-        segs=[]
-        sents=[]
+        l = []
+        x = []
+        y = []
+        segs = []
+        sents = []
 
         max_length = max([len(sentence[0]) for sentence in batch_data])
         for line in batch_data:
@@ -401,4 +158,4 @@ def data_iterator(data, batch_size, shuffle=False):
         segArray.append(segs)
         sentArray.append(sents)
 
-    return (xArray, yArray, lArray, segArray, sentArray)
+    return xArray, yArray, lArray, segArray, sentArray
