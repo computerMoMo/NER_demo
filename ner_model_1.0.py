@@ -50,7 +50,7 @@ flags.DEFINE_float("keep_prob", 0.5, "drop out keep prob")
 flags.DEFINE_string("train_file",   os.path.join(data_path, "train_data.txt"),  "Path for train data")
 flags.DEFINE_string("dev_file",     os.path.join(data_path, "dev_data.txt"),    "Path for dev data")
 flags.DEFINE_string("test_file",    os.path.join(data_path, "test_data.txt"),   "Path for test data")
-flags.DEFINE_string("test_result_file", os.path.join(data_path, "test_predict_result.txt"), "Path for result")
+flags.DEFINE_string("test_result_file", os.path.join(data_path, "model1.0_test_predict_result.txt"), "Path for result")
 flags.DEFINE_boolean("zeros",       False,      "Wither replace digits with zero")
 flags.DEFINE_boolean("lower",       True,       "Wither lower case")
 flags.DEFINE_boolean("pre_emb",     True,       "Wither use pre-trained embedding")
@@ -533,19 +533,20 @@ if __name__ == '__main__':
             print("Dev LOC P:%f, R:%f, F:%f" % (dev_loc_P, dev_loc_R, dev_loc_F))
             print("Dev ORG P:%f, R:%f, F:%f" % (dev_org_P, dev_org_R, dev_org_F))
 
-            if dev_total_F > best_f:
-                test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
-                test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
-                print("Test Accuracy: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
-                print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
-                print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
-                print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
+            test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
+            test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
+            print("Test Accuracy: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
+            print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
+            print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
+            print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
 
+            if dev_total_F > best_f:
                 best_f = dev_total_F
                 checkpoint_path = os.path.join(FLAGS.seg_train_dir, "ner_bilstm.ckpt")
                 m.saver.save(session, checkpoint_path)
                 print("Model Saved...")
 
+        print("Saved model evaluate on test data...")
         test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
         test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
         print("Test Accuracy: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
