@@ -10,7 +10,7 @@ from __future__ import unicode_literals  # compatible with python3 unicode codin
 from loader import load_sentences
 from loader import char_mapping, tag_mapping
 from loader import augment_with_pretrained, prepare_dataset
-from data_utils_for_model1 import data_iterator, load_word2vec
+from data_utils import data_iterator, load_word2vec
 
 import time
 import numpy as np
@@ -27,7 +27,7 @@ sys.path.append(pkg_path)
 
 file_path = os.path.dirname(os.path.abspath(__file__))  # ../nlp_proj/seg/
 data_path = os.path.join(file_path, "ner_data")  # path to find corpus vocab file
-train_dir = os.path.join(file_path, "NER_model_1.0_checkpoint_file")  # path to find model saved checkpoint file
+train_dir = os.path.join(file_path, "NER_model_0_checkpoint_file")  # path to find model saved checkpoint file
 
 flags = tf.flags
 logging = tf.logging
@@ -50,7 +50,7 @@ flags.DEFINE_float("keep_prob", 0.5, "drop out keep prob")
 flags.DEFINE_string("train_file",   os.path.join(data_path, "train_data.txt"),  "Path for train data")
 flags.DEFINE_string("dev_file",     os.path.join(data_path, "dev_data.txt"),    "Path for dev data")
 flags.DEFINE_string("test_file",    os.path.join(data_path, "test_data.txt"),   "Path for test data")
-flags.DEFINE_string("test_result_file", os.path.join(data_path, "model1.0_test_predict_result.txt"), "Path for result")
+flags.DEFINE_string("test_result_file", os.path.join(data_path, "model0_test_predict_result.txt"), "Path for result")
 flags.DEFINE_boolean("zeros",       False,      "Wither replace digits with zero")
 flags.DEFINE_boolean("lower",       True,       "Wither lower case")
 flags.DEFINE_boolean("pre_emb",     True,       "Wither use pre-trained embedding")
