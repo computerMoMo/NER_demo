@@ -27,7 +27,7 @@ sys.path.append(pkg_path)
 
 file_path = os.path.dirname(os.path.abspath(__file__))  # ../nlp_proj/seg/
 data_path = os.path.join(file_path, "ner_data")  # path to find corpus vocab file
-train_dir = os.path.join(file_path, "ner_model_cc")  # path to find model saved checkpoint file
+train_dir = os.path.join(file_path, "ner_model_cc_debug")  # path to find model saved checkpoint file
 
 flags = tf.flags
 logging = tf.logging
@@ -100,6 +100,10 @@ class Segmenter(object):
         seg_data_reshape = tf.reshape(self._seg_data, [batch_size, -1, 1])
         seg_data_reshape = tf.cast(seg_data_reshape, dtype=data_type())
         self._loss, self._logits, self._trans, self._seq_len_plus1 = _bilstm_model(inputs, self._targets, self._seq_len, config, seg_data_reshape, self._max_seq_len)
+        # self._viterbi_sequence_len = tf.placeholder(dtype=tf.int32,  name='viterbi_len')
+        # self._viterbi_logits = tf.placeholder(dtype=data_type(), shape=[None, self.seg_nums+1], name='viterbi_logits')
+
+        self._viterbi_sequence = _crf_decode(self._logits, self._trans, self._seq_len, batch_size)
 
         # print("input data name: ",self._input_data.name)
         # print("targets name: ",self._targets.name)
@@ -109,8 +113,6 @@ class Segmenter(object):
         # print(self._loss.name)
         # print(self._logits.name)
         # print(self._trans.name)
-
-
         with tf.variable_scope("train_ops") as scope:
             # Gradients and SGD update operation for training the model.
             self._lr = tf.Variable(0.0, trainable=False)
@@ -274,7 +276,25 @@ def _bilstm_model(inputs, targets, seq_len, config, seg_data, max_seq_len):
         # CRF encode
         log_likelihood, transition_params = tf.contrib.crf.crf_log_likelihood(new_logits, new_targets, seq_len+1)
         loss = tf.reduce_mean(-log_likelihood, name='crf_losses')
+
+        # CRF decode
+        # for decode_vitrebi, decode_len in zip()
+        # new_logits_array = new_logits[1]
     return loss, new_logits, transition_params, seq_len+1
+
+
+def _crf_decode(logits, trans, seq_len, batch_size):
+    decode_results = []
+
+
+    # for logits_, l_ in zip(logits_array, seq_len_array):
+    for i in range(0, batch_size):
+        l_ = seq_len[i]
+        logits_ = logits[i][:l_ + 1]
+        print("decode logits shape: ", logits_.shape)
+        viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(logits_, trans)
+        decode_results.append(viterbi_sequence[1:])
+    return decode_results
 
 
 def run_epoch(session, model, data, eval_op, batch_size, verbose=False):
@@ -435,12 +455,11 @@ def debug_tensors(session, model, data, eval_op, batch_size, tag_to_id, verbose=
         loss, logits, trans, lstm_inputs, targets, seq_len, seq_len_plus1 = session.run(fetches, feed_dict)
         print(np.asarray(x).shape, " ", np.asarray(y).shape, " ", np.asarray(l).shape, " ", np.asarray(seg).shape)
         print("logits shape:", logits.shape)
-        print("targets shape:", targets.shape)
-        print("seq len:", seq_len)
-        print("seq len plus 1:", seq_len_plus1)
-        # print("lstm inputs shape:", lstm_inputs.shape)
-        print("real len:", l[0])
-        # print(lstm_inputs[0][0])
+        for logits_, l_ in zip(logits, l):
+            print(np.asarray(logits_).shape)
+            print(logits_)
+            print(l_)
+            break
         break
 
 
@@ -526,57 +545,57 @@ if __name__ == '__main__':
 
         # debug
         # m.assign_lr(session, config.learning_rate)
-        # debug_tensors(session, m, train_data, tf.no_op(), config.batch_size, tag_to_id)
+        debug_tensors(session, m, train_data, tf.no_op(), config.batch_size, tag_to_id)
         #  ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
 
         # train
-        for i in range(1):
-            m.assign_lr(session, config.learning_rate)
-
-            print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
-            train_losses = run_epoch(session, m, train_data, m.train_op, config.batch_size, verbose=True)
-
-            dev_accuracy, dev_total_P, dev_total_R, dev_total_F, dev_per_P, dev_per_R, dev_per_F, dev_loc_P, dev_loc_R, dev_loc_F, \
-            dev_org_P, dev_org_R, dev_org_F = ner_evaluate(session, m, dev_data, tf.no_op(), config.batch_size, tag_to_id)
-            print("Dev Accuracy: %f, total P:%f, R:%f, F:%f" % (dev_accuracy, dev_total_P, dev_total_R, dev_total_F))
-            print("Dev PER P:%f, R:%f, F:%f" % (dev_per_P, dev_per_R, dev_per_F))
-            print("Dev LOC P:%f, R:%f, F:%f" % (dev_loc_P, dev_loc_R, dev_loc_F))
-            print("Dev ORG P:%f, R:%f, F:%f" % (dev_org_P, dev_org_R, dev_org_F))
-
-            test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
-            test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
-            print("Test Accuracy: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
-            print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
-            print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
-            print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
-
-            if dev_total_F > best_f:
-                best_f = dev_total_F
-                checkpoint_path = os.path.join(FLAGS.seg_train_dir, "ner_bilstm.ckpt")
-                m.saver.save(session, checkpoint_path)
-                print("Model Saved...")
-
-        print("Saved model evaluate on test data...")
-        test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
-        test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
-        print("Test Accuracy: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
-        print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
-        print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
-        print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
-
-    # 生成测试集的预测结果并将其存储到文件，这里的batch size设置为1
-    with tf.Graph().as_default(), tf.Session() as result_session:
-        config.batch_size = 1
-        initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
-        with tf.variable_scope(FLAGS.seg_scope_name, reuse=None, initializer=initializer):
-            result_m = Segmenter(config=config, init_embedding=char_vectors)
-        # CheckPoint State
-        ckpt = tf.train.get_checkpoint_state(FLAGS.seg_train_dir)
-        if ckpt:
-            print("Loading model parameters from %s" % ckpt.model_checkpoint_path)
-            result_m.saver.restore(result_session, tf.train.latest_checkpoint(FLAGS.seg_train_dir))
-        else:
-            print("predict with initial parameters.")
-            result_session.run(tf.global_variables_initializer())
-        print("predict and save test data predict results")
-        ner_generate_results(session=result_session, model=result_m, data=test_data, batch_size=1, result_file_name=FLAGS.test_result_file, id_to_tag=id_to_tag)
+    #     for i in range(1):
+    #         m.assign_lr(session, config.learning_rate)
+    #
+    #         print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
+    #         train_losses = run_epoch(session, m, train_data, m.train_op, config.batch_size, verbose=True)
+    #
+    #         dev_accuracy, dev_total_P, dev_total_R, dev_total_F, dev_per_P, dev_per_R, dev_per_F, dev_loc_P, dev_loc_R, dev_loc_F, \
+    #         dev_org_P, dev_org_R, dev_org_F = ner_evaluate(session, m, dev_data, tf.no_op(), config.batch_size, tag_to_id)
+    #         print("Dev Accuracy: %f, total P:%f, R:%f, F:%f" % (dev_accuracy, dev_total_P, dev_total_R, dev_total_F))
+    #         print("Dev PER P:%f, R:%f, F:%f" % (dev_per_P, dev_per_R, dev_per_F))
+    #         print("Dev LOC P:%f, R:%f, F:%f" % (dev_loc_P, dev_loc_R, dev_loc_F))
+    #         print("Dev ORG P:%f, R:%f, F:%f" % (dev_org_P, dev_org_R, dev_org_F))
+    #
+    #         test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
+    #         test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
+    #         print("Test Accuracy: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
+    #         print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
+    #         print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
+    #         print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
+    #
+    #         if dev_total_F > best_f:
+    #             best_f = dev_total_F
+    #             checkpoint_path = os.path.join(FLAGS.seg_train_dir, "ner_bilstm.ckpt")
+    #             m.saver.save(session, checkpoint_path)
+    #             print("Model Saved...")
+    #
+    #     print("Saved model evaluate on test data...")
+    #     test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
+    #     test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
+    #     print("Test Accuracy: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
+    #     print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
+    #     print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
+    #     print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
+    #
+    # # 生成测试集的预测结果并将其存储到文件，这里的batch size设置为1
+    # with tf.Graph().as_default(), tf.Session() as result_session:
+    #     config.batch_size = 1
+    #     initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
+    #     with tf.variable_scope(FLAGS.seg_scope_name, reuse=None, initializer=initializer):
+    #         result_m = Segmenter(config=config, init_embedding=char_vectors)
+    #     # CheckPoint State
+    #     ckpt = tf.train.get_checkpoint_state(FLAGS.seg_train_dir)
+    #     if ckpt:
+    #         print("Loading model parameters from %s" % ckpt.model_checkpoint_path)
+    #         result_m.saver.restore(result_session, tf.train.latest_checkpoint(FLAGS.seg_train_dir))
+    #     else:
+    #         print("predict with initial parameters.")
+    #         result_session.run(tf.global_variables_initializer())
+    #     print("predict and save test data predict results")
+    #     ner_generate_results(session=result_session, model=result_m, data=test_data, batch_size=1, result_file_name=FLAGS.test_result_file, id_to_tag=id_to_tag)
