@@ -781,18 +781,21 @@ if __name__ == '__main__':
         print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
 
     # 生成测试集的预测结果并将其存储到文件，这里的batch size设置为1
-    # with tf.Graph().as_default(), tf.Session() as result_session:
-    #     config.batch_size = 1
-    #     initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
-    #     with tf.variable_scope(FLAGS.seg_scope_name, reuse=None, initializer=initializer):
-    #         result_m = Segmenter(config=config, init_embedding=char_vectors)
-    #     # CheckPoint State
-    #     ckpt = tf.train.get_checkpoint_state(FLAGS.seg_train_dir)
-    #     if ckpt:
-    #         print("Loading model parameters from %s" % ckpt.model_checkpoint_path)
-    #         result_m.saver.restore(result_session, tf.train.latest_checkpoint(FLAGS.seg_train_dir))
-    #     else:
-    #         print("predict with initial parameters.")
-    #         result_session.run(tf.global_variables_initializer())
-    #     print("predict and save test data predict results")
-    #     ner_generate_results(session=result_session, model=result_m, data=test_data, batch_size=1, result_file_name=FLAGS.test_result_file, id_to_tag=id_to_tag)
+    with tf.Graph().as_default(), tf.Session() as result_session:
+        config.batch_size = 1
+        initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
+        with tf.variable_scope(FLAGS.seg_scope_name, reuse=None, initializer=initializer):
+            result_m = Segmenter(config=config, init_embedding=char_vectors)
+        # CheckPoint State
+        ckpt = tf.train.get_checkpoint_state(FLAGS.seg_train_dir)
+        if ckpt:
+            print("Loading model parameters from %s" % ckpt.model_checkpoint_path)
+            result_m.saver.restore(result_session, tf.train.latest_checkpoint(FLAGS.seg_train_dir))
+            print("save batch size 1 model")
+            checkpoint_path = os.path.join(FLAGS.seg_train_dir, "ner_bilstm.ckpt")
+            result_m.saver.save(result_session, checkpoint_path)
+        else:
+            print("predict with initial parameters.")
+            result_session.run(tf.global_variables_initializer())
+        print("predict and save test data predict results")
+        ner_generate_results(session=result_session, model=result_m, data=test_data, batch_size=1, result_file_name=FLAGS.test_result_file, id_to_tag=id_to_tag)

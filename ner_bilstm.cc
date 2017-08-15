@@ -78,10 +78,14 @@ int main()
     int batch_len;
     cout<<"batch len:";
     cin>>batch_len;
+    int batch_size;
+    cout<<"batch size:";
+    cin>>batch_size;
+
 //    x data
-    Tensor x(tensorflow::DT_INT32,{20,batch_len});
+    Tensor x(tensorflow::DT_INT32,{batch_size,batch_len});
     auto x_map = x.tensor<int, 2>();
-    for (i=0;i<20;i++)
+    for (i=0;i<batch_size;i++)
     {
         for (j=0;j<batch_len;j++)
         {
@@ -90,9 +94,9 @@ int main()
     }
     feed_inputs.emplace_back(x_name, x);
 // y data
-    Tensor y(tensorflow::DT_INT32,{20,batch_len});
+    Tensor y(tensorflow::DT_INT32,{batch_size,batch_len});
     auto y_map = y.tensor<int, 2>();
-    for (i=0;i<20;i++)
+    for (i=0;i<batch_size;i++)
     {
         for (j=0;j<batch_len;j++)
         {
@@ -101,17 +105,17 @@ int main()
     }
     feed_inputs.emplace_back(y_name, y);
 //    len data
-    Tensor len(tensorflow::DT_INT32, {20});
+    Tensor len(tensorflow::DT_INT32, {batch_size});
     auto len_map = len.tensor<int, 1>();
-    for(i=0;i<20;i++)
+    for(i=0;i<batch_size;i++)
     {
         len_map(i) = batch_len-i;
     }
     feed_inputs.emplace_back(len_name, len);
 //    seg data
-    Tensor seg(tensorflow::DT_INT32,{20,batch_len});
+    Tensor seg(tensorflow::DT_INT32,{batch_size,batch_len});
     auto seg_map = seg.tensor<int, 2>();
-    for (i=0;i<20;i++)
+    for (i=0;i<batch_size;i++)
     {
         for (j=0;j<batch_len;j++)
         {
@@ -158,9 +162,9 @@ int main()
 
     cin>>order;
     auto crf_decode_map = fetch_outputs[0].tensor<int,2>();
-    for(i=0;i<20;i++)
+    for(i=0;i<batch_size;i++)
     {
-        for (j = 0; j < 103; j++)
+        for (j = 0; j < batch_len+1; j++)
         {
             std::cout<<crf_decode_map(i,j)<<" ";
         }

@@ -1,2 +1,2 @@
-model_checkpoint_path: "/home/zmh/NER/NER_demo/ner_model_cc_debug/ner_bilstm.ckpt"
-all_model_checkpoint_paths: "/home/zmh/NER/NER_demo/ner_model_cc_debug/ner_bilstm.ckpt"
+model_checkpoint_path: "/home/jeffly/PycharmProjects/NER_demo/ner_model_cc_debug/ner_bilstm.ckpt"
+all_model_checkpoint_paths: "/home/jeffly/PycharmProjects/NER_demo/ner_model_cc_debug/ner_bilstm.ckpt"
