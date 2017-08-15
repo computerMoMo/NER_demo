@@ -36,13 +36,6 @@ def create_mapping(dico):
     return item_to_id, id_to_item
 
 
-def zero_digits(s):
-    """
-    Replace every digit in a string by a zero.
-    """
-    return re.sub('\d', '0', s)
-
-
 def get_seg_features(string):
     """
     Segment text with jieba
@@ -106,22 +99,6 @@ def load_word2vec(emb_path, id_to_word, word_dim):
               c_found, c_lower, c_zeros
           ))
     return new_weights
-
-
-def full_to_half(s):
-    """
-    Convert full-width character to half-width one 
-    """
-    n = []
-    for char in s:
-        num = ord(char)
-        if num == 0x3000:
-            num = 32
-        elif 0xFF01 <= num <= 0xFF5E:
-            num -= 0xfee0
-        char = chr(num)
-        n.append(char)
-    return ''.join(n)
 
 
 def data_iterator(data, batch_size, shuffle=False):

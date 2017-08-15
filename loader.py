@@ -3,11 +3,11 @@ import os
 import re
 import codecs
 
-from data_utils import create_dico, create_mapping, zero_digits
+from data_utils import create_dico, create_mapping
 from data_utils import get_seg_features
 
 
-def load_sentences(path, lower, zeros):
+def load_sentences(path):
     """
     Load sentences. A line must contain at least a word and its tag.
     Sentences are separated by empty lines.
@@ -17,7 +17,7 @@ def load_sentences(path, lower, zeros):
     num = 0
     for line in codecs.open(path, 'r', 'utf8'):
         num += 1
-        line = zero_digits(line.rstrip()) if zeros else line.rstrip()
+        line = line.rstrip()
         if not line:
             if len(sentence) > 0:
                 if 'DOCSTART' not in sentence[0][0]:

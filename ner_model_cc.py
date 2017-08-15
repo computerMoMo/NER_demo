@@ -1,8 +1,5 @@
-#!/usr/bin/python
 # -*- coding:utf-8 -*-
-"""
-SEG for building a LSTM based SEG model.
-"""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -11,6 +8,13 @@ from loader import load_sentences
 from loader import char_mapping, tag_mapping
 from loader import augment_with_pretrained, prepare_dataset
 from data_utils import data_iterator, load_word2vec
+from tensorflow.python.framework import dtypes
+from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import gen_array_ops
+from tensorflow.python.ops import math_ops
+from tensorflow.python.ops import rnn
+from tensorflow.python.ops import rnn_cell
+from tensorflow.python.ops import variable_scope as vs
 
 import time
 import numpy as np
@@ -22,12 +26,12 @@ import pickle
 import itertools
 
 
-pkg_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../nlp_proj/
+pkg_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(pkg_path)
 
-file_path = os.path.dirname(os.path.abspath(__file__))  # ../nlp_proj/seg/
-data_path = os.path.join(file_path, "ner_data")  # path to find corpus vocab file
-train_dir = os.path.join(file_path, "ner_model_cc_debug")  # path to find model saved checkpoint file
+file_path = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(file_path, "ner_data")
+train_dir = os.path.join(file_path, "ner_model_cc_debug")
 
 flags = tf.flags
 logging = tf.logging
@@ -78,7 +82,7 @@ class Segmenter(object):
         self._targets = tf.placeholder(tf.int32, [batch_size, None], name='targets')
         self._seq_len = tf.placeholder(tf.int32, [batch_size], name='seq_len')
         self._seg_data = tf.placeholder(tf.int32, [batch_size, None], name='seg_data')
-        self._max_seq_len = tf.placeholder(tf.int32, name='max_seq_len')
+        self._max_seq_len = tf.placeholder(tf.int32, shape=[1], name='max_seq_len')
 
         with tf.device("/cpu:0"):
             if init_embedding is None:
@@ -91,8 +95,9 @@ class Segmenter(object):
         seg_inputs = tf.nn.embedding_lookup(self.seg_embedding, self._seg_data)
         inputs = tf.concat([inputs, seg_inputs], axis=-1)
 
-        self._dropout_keep_prob = tf.placeholder(dtype=tf.float32, name="Dropout")
-        inputs = tf.nn.dropout(inputs, self._dropout_keep_prob)
+        self._dropout_keep_prob = tf.placeholder(dtype=tf.float32, shape=[1], name="Dropout")
+        self._tt = tf.reshape(self._dropout_keep_prob, shape=[])
+        inputs = tf.nn.dropout(inputs, self._tt)
 
         # 字窗口特征和分词特征
         inputs = tf.reshape(inputs, [batch_size, -1, self.embedding_size + self.seg_embedding_size])
@@ -103,7 +108,8 @@ class Segmenter(object):
         # self._viterbi_sequence_len = tf.placeholder(dtype=tf.int32,  name='viterbi_len')
         # self._viterbi_logits = tf.placeholder(dtype=data_type(), shape=[None, self.seg_nums+1], name='viterbi_logits')
 
-        self._viterbi_sequence = _crf_decode(self._logits, self._trans, self._seq_len, batch_size)
+        self._viterbi_sequence, _ = crf_decode(self._logits, self._trans, self._seq_len+1)
+        print("_viterbi_sequence name: ", self._viterbi_sequence.name, type(self._viterbi_sequence))
 
         # print("input data name: ",self._input_data.name)
         # print("targets name: ",self._targets.name)
@@ -115,7 +121,7 @@ class Segmenter(object):
         # print(self._trans.name)
         with tf.variable_scope("train_ops") as scope:
             # Gradients and SGD update operation for training the model.
-            self._lr = tf.Variable(0.0, trainable=False)
+            self._lr = tf.Variable(0.001, trainable=False)
             tvars = tf.trainable_variables()
             grads, _ = tf.clip_by_global_norm(tf.gradients(self._loss, tvars), config.max_grad_norm)
             self.optimizer = tf.train.AdamOptimizer(self._lr)
@@ -123,12 +129,12 @@ class Segmenter(object):
                 zip(grads, tvars),
                 global_step=tf.contrib.framework.get_or_create_global_step())
 
-            self._new_lr = tf.placeholder(data_type(), shape=[], name="new_learning_rate")
-            self._lr_update = tf.assign(self._lr, self._new_lr)
+            # self._new_lr = tf.placeholder(data_type(), shape=[], name="new_learning_rate")
+            # self._lr_update = tf.assign(self._lr, self._new_lr)
         self.saver = tf.train.Saver(tf.global_variables())
 
     def assign_lr(self, session, lr_value):
-        session.run(self._lr_update, feed_dict={self._new_lr: lr_value})
+        session.run(self._lr, feed_dict={self._lr: lr_value})
 
     @property
     def input_data(self):
@@ -181,6 +187,10 @@ class Segmenter(object):
     @property
     def seq_len_plus1(self):
         return self._seq_len_plus1
+
+    @property
+    def viterbi_sequence(self):
+        return self._viterbi_sequence
 
 
 # seg model configuration, set target num, and input vocab_size
@@ -269,7 +279,8 @@ def _bilstm_model(inputs, targets, seq_len, config, seg_data, max_seq_len):
         small = -1000.0
         # pad logits for crf loss
         start_logits = tf.concat([small * tf.ones(shape=[batch_size, 1, target_num]), tf.zeros(shape=[batch_size, 1, 1])], axis=-1)
-        pad_logits = tf.cast(small * tf.ones([batch_size, max_seq_len, 1]), tf.float32)
+        max_seq_len_tt = tf.reshape(max_seq_len, shape=[])
+        pad_logits = tf.cast(small * tf.ones([batch_size, max_seq_len_tt, 1]), tf.float32)
         new_logits = tf.concat([logits, pad_logits], axis=-1)
         new_logits = tf.concat([start_logits, new_logits], axis=1, name='crf_logits')
         new_targets = tf.concat([tf.cast(target_num * tf.ones([batch_size, 1]), tf.int32), targets], axis=-1)
@@ -278,6 +289,7 @@ def _bilstm_model(inputs, targets, seq_len, config, seg_data, max_seq_len):
         loss = tf.reduce_mean(-log_likelihood, name='crf_losses')
 
         # CRF decode
+        # crf_decode(new_logits, transition_params, seq_len+1)
         # for decode_vitrebi, decode_len in zip()
         # new_logits_array = new_logits[1]
     return loss, new_logits, transition_params, seq_len+1
@@ -311,8 +323,8 @@ def run_epoch(session, model, data, eval_op, batch_size, verbose=False):
         feed_dict[model.targets] = y
         feed_dict[model.seq_len] = l
         feed_dict[model.seg_data] = seg
-        feed_dict[model.dropout_keep_prob] = FLAGS.keep_prob
-        feed_dict[model.max_seq_len] = max(l)
+        feed_dict[model.dropout_keep_prob] = [FLAGS.keep_prob]
+        feed_dict[model.max_seq_len] = [max(l)]
         loss, logits, _ = session.run(fetches, feed_dict)
         losses += loss
         iters += 1
@@ -346,8 +358,8 @@ def ner_evaluate(session, model, data, eval_op, batch_size, tag_to_id):
         feed_dict[model.targets] = y
         feed_dict[model.seq_len] = l
         feed_dict[model.seg_data] = seg
-        feed_dict[model.dropout_keep_prob] = 1.0#evaluate的时候keep设置为1
-        feed_dict[model.max_seq_len] = max(l)
+        feed_dict[model.dropout_keep_prob] = [1.0]#evaluate的时候keep设置为1
+        feed_dict[model.max_seq_len] = [max(l)]
         loss, logits, trans = session.run(fetches, feed_dict)
         for logits_, y_, l_ in zip(logits, y, l):
             logits_ = logits_[:l_+1]
@@ -440,25 +452,199 @@ def ner_evaluate(session, model, data, eval_op, batch_size, tag_to_id):
     return accuracy, total_P, total_R, total_F, per_P, per_R, per_F, loc_P, loc_R, loc_F, org_P, org_R, org_F
 
 
+class CrfDecodeForwardRnnCell(rnn_cell.RNNCell):
+  """Computes the forward decoding in a linear-chain CRF.
+  """
+
+  def __init__(self, transition_params):
+    """Initialize the CrfDecodeForwardRnnCell.
+    Args:
+      transition_params: A [num_tags, num_tags] matrix of binary
+        potentials. This matrix is expanded into a
+        [1, num_tags, num_tags] in preparation for the broadcast
+        summation occurring within the cell.
+    """
+    self._transition_params = array_ops.expand_dims(transition_params, 0)
+    self._num_tags = transition_params.get_shape()[0].value
+
+  @property
+  def state_size(self):
+    return self._num_tags
+
+  @property
+  def output_size(self):
+    return self._num_tags
+
+  def __call__(self, inputs, state, scope=None):
+    """Build the CrfDecodeForwardRnnCell.
+    Args:
+      inputs: A [batch_size, num_tags] matrix of unary potentials.
+      state: A [batch_size, num_tags] matrix containing the previous step's
+            score values.
+      scope: Unused variable scope of this cell.
+    Returns:
+      backpointers: [batch_size, num_tags], containing backpointers.
+      new_state: [batch_size, num_tags], containing new score values.
+    """
+    # For simplicity, in shape comments, denote:
+    # 'batch_size' by 'B', 'max_seq_len' by 'T' , 'num_tags' by 'O' (output).
+    state = array_ops.expand_dims(state, 2)                         # [B, O, 1]
+
+    # This addition op broadcasts self._transitions_params along the zeroth
+    # dimension and state along the second dimension.
+    # [B, O, 1] + [1, O, O] -> [B, O, O]
+    transition_scores = state + self._transition_params             # [B, O, O]
+    new_state = inputs + math_ops.reduce_max(transition_scores, [1])  # [B, O]
+    backpointers = math_ops.argmax(transition_scores, 1)
+    backpointers = math_ops.cast(backpointers, dtype=dtypes.int32)    # [B, O]
+    return backpointers, new_state
+
+
+class CrfDecodeBackwardRnnCell(rnn_cell.RNNCell):
+  """Computes backward decoding in a linear-chain CRF.
+  """
+
+  def __init__(self, num_tags):
+    """Initialize the CrfDecodeBackwardRnnCell.
+    Args:
+      num_tags
+    """
+    self._num_tags = num_tags
+
+  @property
+  def state_size(self):
+    return 1
+
+  @property
+  def output_size(self):
+    return 1
+
+  def __call__(self, inputs, state, scope=None):
+    """Build the CrfDecodeBackwardRnnCell.
+    Args:
+      inputs: [batch_size, num_tags], backpointer of next step (in time order).
+      state: [batch_size, 1], next position's tag index.
+      scope: Unused variable scope of this cell.
+    Returns:
+      new_tags, new_tags: A pair of [batch_size, num_tags]
+        tensors containing the new tag indices.
+    """
+    state = array_ops.squeeze(state, axis=[1])                # [B]
+    batch_size = array_ops.shape(inputs)[0]
+    b_indices = math_ops.range(batch_size)                    # [B]
+    indices = array_ops.stack([b_indices, state], axis=1)     # [B, 2]
+    new_tags = array_ops.expand_dims(
+        gen_array_ops.gather_nd(inputs, indices),             # [B]
+        axis=-1)                                              # [B, 1]
+
+    return new_tags, new_tags
+
+
+def crf_decode(potentials, transition_params, sequence_length):
+  """Decode the highest scoring sequence of tags in TensorFlow.
+  This is a function for tensor.
+  Args:
+    potentials: A [batch_size, max_seq_len, num_tags] tensor, matrix of
+              unary potentials.
+    transition_params: A [num_tags, num_tags] tensor, matrix of
+              binary potentials.
+    sequence_length: A [batch_size] tensor, containing sequence lengths.
+  Returns:
+    decode_tags: A [batch_size, max_seq_len] tensor, with dtype tf.int32.
+                Contains the highest scoring tag indicies.
+    best_score: A [batch_size] tensor, containing the score of decode_tags.
+  """
+  # For simplicity, in shape comments, denote:
+  # 'batch_size' by 'B', 'max_seq_len' by 'T' , 'num_tags' by 'O' (output).
+  num_tags = potentials.get_shape()[2].value
+
+  # Computes forward decoding. Get last score and backpointers.
+  crf_fwd_cell = CrfDecodeForwardRnnCell(transition_params)
+  initial_state = array_ops.slice(potentials, [0, 0, 0], [-1, 1, -1])
+  initial_state = array_ops.squeeze(initial_state, axis=[1])      # [B, O]
+  inputs = array_ops.slice(potentials, [0, 1, 0], [-1, -1, -1])   # [B, T-1, O]
+  backpointers, last_score = rnn.dynamic_rnn(
+      crf_fwd_cell,
+      inputs=inputs,
+      sequence_length=sequence_length - 1,
+      initial_state=initial_state,
+      time_major=False,
+      dtype=dtypes.int32)             # [B, T - 1, O], [B, O]
+  backpointers = gen_array_ops.reverse_sequence(
+      backpointers, sequence_length - 1, seq_dim=1)               # [B, T-1, O]
+
+  # Computes backward decoding. Extract tag indices from backpointers.
+  crf_bwd_cell = CrfDecodeBackwardRnnCell(num_tags)
+  initial_state = math_ops.cast(math_ops.argmax(last_score, axis=1),
+                                dtype=dtypes.int32)               # [B]
+  initial_state = array_ops.expand_dims(initial_state, axis=-1)   # [B, 1]
+  decode_tags, _ = rnn.dynamic_rnn(
+      crf_bwd_cell,
+      inputs=backpointers,
+      sequence_length=sequence_length - 1,
+      initial_state=initial_state,
+      time_major=False,
+      dtype=dtypes.int32)           # [B, T - 1, 1]
+  decode_tags = array_ops.squeeze(decode_tags, axis=[2])           # [B, T - 1]
+  decode_tags = array_ops.concat([initial_state, decode_tags], axis=1)  # [B, T]
+  decode_tags = gen_array_ops.reverse_sequence(
+      decode_tags, sequence_length, seq_dim=1)                     # [B, T]
+
+  best_score = math_ops.reduce_max(last_score, axis=1)             # [B]
+  return decode_tags, best_score
+
+
+#test viterbi_decode
+def test_viterbi_decode(score, transition_params):
+    trellis = np.zeros_like(score)
+    backpointers = np.zeros_like(score, dtype=np.int32)
+    trellis[0] = score[0]
+
+    for t in range(1, score.shape[0]):
+        v = np.expand_dims(trellis[t - 1], 1)
+        print("v shape:", v.shape)
+        print("v: ", v)
+        print("trellist t shape: ", trellis[t].shape)
+        print(trellis[t])
+        trellis[t] = score[t] + np.max(v, 0)
+        print("max v:", np.max(v, 0))
+        print("after: ", trellis[t])
+        backpointers[t] = np.argmax(v, 0)
+        print("back pointers: ", backpointers[t])
+        break
+
+    # viterbi = [np.argmax(trellis[-1])]
+    # for bp in reversed(backpointers[1:]):
+    #     viterbi.append(bp[viterbi[-1]])
+    # viterbi.reverse()
+
+    viterbi_score = np.max(trellis[-1])
+    # return viterbi, viterbi_score
+
+
 # debug
 def debug_tensors(session, model, data, eval_op, batch_size, tag_to_id, verbose=False):
     xArray, yArray, lArray, segArray, sentArray = data_iterator(data, FLAGS.batch_size)
     for x, y, l, seg in zip(xArray, yArray, lArray, segArray):
-        fetches = [model.loss, model.logits, model.trans, model.lstm_inputs, model.targets, model.seq_len, model.seq_len_plus1]
+        fetches = [model.loss, model.logits, model.trans, model.lstm_inputs, model.targets, model.seq_len, model.seq_len_plus1, model.viterbi_sequence]
         feed_dict = {}
         feed_dict[model.input_data] = x
         feed_dict[model.targets] = y
         feed_dict[model.seq_len] = l
         feed_dict[model.seg_data] = seg
-        feed_dict[model.dropout_keep_prob] = FLAGS.keep_prob
-        feed_dict[model.max_seq_len] = max(l)
-        loss, logits, trans, lstm_inputs, targets, seq_len, seq_len_plus1 = session.run(fetches, feed_dict)
-        print(np.asarray(x).shape, " ", np.asarray(y).shape, " ", np.asarray(l).shape, " ", np.asarray(seg).shape)
-        print("logits shape:", logits.shape)
+        feed_dict[model.dropout_keep_prob] = [FLAGS.keep_prob]
+        feed_dict[model.max_seq_len] = [max(l)]
+        loss, logits, trans, lstm_inputs, targets, seq_len, seq_len_plus1, model_viterbi_sequence = session.run(fetches, feed_dict)
+
+        print("model decode:", model_viterbi_sequence.shape, type(model_viterbi_sequence))
         for logits_, l_ in zip(logits, l):
-            print(np.asarray(logits_).shape)
-            print(logits_)
-            print(l_)
+            logits_ = logits_[:l_+1]
+            viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(logits_, trans)
+            viterbi_sequence = viterbi_sequence[1:]
+            print("crf decode: ", viterbi_sequence)
+            print("model decode: ", list(model_viterbi_sequence[0][1:l_+1]))
+            # test_viterbi_decode(logits_, trans)
+            # print("test decode: ", new_viterbi_sequence[1:])
             break
         break
 
@@ -467,36 +653,47 @@ def debug_tensors(session, model, data, eval_op, batch_size, tag_to_id, verbose=
 def ner_generate_results(session, model, data, batch_size, result_file_name, id_to_tag):
     result_file_writer = codecs.open(result_file_name, encoding="utf-8", mode='w')
     result_file_writer.write("char\tgold_label\tpre_label\n")
+
+    temp_file_writer = codecs.open("ner_data/temp.txt", encoding="utf-8", mode='w')
+    temp_file_writer.write("char\tgold_label\tpre_label\n")
     xArray, yArray, lArray, segArray, sentArray = data_iterator(data, batch_size)
     for x, y, l, seg, sent in zip(xArray, yArray, lArray, segArray, sentArray):
-        fetches = [model.loss, model.logits, model.trans]
+        fetches = [model.loss, model.logits, model.trans, model.viterbi_sequence]
         feed_dict = dict()
         feed_dict[model.input_data] = x
         feed_dict[model.targets] = y
         feed_dict[model.seq_len] = l
         feed_dict[model.seg_data] = seg
-        feed_dict[model.dropout_keep_prob] = 1.0  # evaluate的时候keep设置为1
-        feed_dict[model.max_seq_len] = max(l)
-        loss, logits, trans = session.run(fetches, feed_dict)
+        feed_dict[model.dropout_keep_prob] = [1.0] # evaluate的时候keep设置为1
+        feed_dict[model.max_seq_len] = [max(l)]
+        loss, logits, trans, decode_res = session.run(fetches, feed_dict)
 
-        for logits_, y_, l_, char_ in zip(logits, y, l, sent):
+        for logits_, decode_item, y_, l_, char_ in zip(logits, decode_res, y, l, sent):
             logits_ = logits_[:l_+1]
             y_ = y_[:l_]
             char_ = char_[:l_]
             #crf decode
             viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(logits_, trans)
             viterbi_sequence = viterbi_sequence[1:]
-            for pre_tag, gold_tag, test_char in zip(viterbi_sequence, y_, char_):
+
+            new_viterbi_sequence = decode_item[1:l_+1]
+            for pre_tag, gold_tag, test_char in zip(new_viterbi_sequence, y_, char_):
                 result_file_writer.write(str(test_char)+"\t"+str(id_to_tag[int(gold_tag)])+"\t"+str(id_to_tag[int(pre_tag)])+"\n")
             result_file_writer.write("\n")
+
+            for pre_tag, gold_tag, test_char in zip(viterbi_sequence, y_, char_):
+                temp_file_writer.write(str(test_char)+"\t"+str(id_to_tag[int(gold_tag)])+"\t"+str(id_to_tag[int(pre_tag)])+"\n")
+            temp_file_writer.write("\n")
+
     result_file_writer.close()
+    temp_file_writer.close()
 
 
 if __name__ == '__main__':
     # load data sets
-    train_sentences = load_sentences(FLAGS.train_file, FLAGS.lower, FLAGS.zeros)
-    dev_sentences = load_sentences(FLAGS.dev_file, FLAGS.lower, FLAGS.zeros)
-    test_sentences = load_sentences(FLAGS.test_file, FLAGS.lower, FLAGS.zeros)
+    train_sentences = load_sentences(FLAGS.train_file)
+    dev_sentences = load_sentences(FLAGS.dev_file)
+    test_sentences = load_sentences(FLAGS.test_file)
 
     # create dictionary for word
     if FLAGS.pre_emb:
@@ -545,45 +742,45 @@ if __name__ == '__main__':
 
         # debug
         # m.assign_lr(session, config.learning_rate)
-        debug_tensors(session, m, train_data, tf.no_op(), config.batch_size, tag_to_id)
+        # debug_tensors(session, m, train_data, tf.no_op(), config.batch_size, tag_to_id)
         #  ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
 
         # train
-    #     for i in range(1):
-    #         m.assign_lr(session, config.learning_rate)
-    #
-    #         print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
-    #         train_losses = run_epoch(session, m, train_data, m.train_op, config.batch_size, verbose=True)
-    #
-    #         dev_accuracy, dev_total_P, dev_total_R, dev_total_F, dev_per_P, dev_per_R, dev_per_F, dev_loc_P, dev_loc_R, dev_loc_F, \
-    #         dev_org_P, dev_org_R, dev_org_F = ner_evaluate(session, m, dev_data, tf.no_op(), config.batch_size, tag_to_id)
-    #         print("Dev Accuracy: %f, total P:%f, R:%f, F:%f" % (dev_accuracy, dev_total_P, dev_total_R, dev_total_F))
-    #         print("Dev PER P:%f, R:%f, F:%f" % (dev_per_P, dev_per_R, dev_per_F))
-    #         print("Dev LOC P:%f, R:%f, F:%f" % (dev_loc_P, dev_loc_R, dev_loc_F))
-    #         print("Dev ORG P:%f, R:%f, F:%f" % (dev_org_P, dev_org_R, dev_org_F))
-    #
-    #         test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
-    #         test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
-    #         print("Test Accuracy: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
-    #         print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
-    #         print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
-    #         print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
-    #
-    #         if dev_total_F > best_f:
-    #             best_f = dev_total_F
-    #             checkpoint_path = os.path.join(FLAGS.seg_train_dir, "ner_bilstm.ckpt")
-    #             m.saver.save(session, checkpoint_path)
-    #             print("Model Saved...")
-    #
-    #     print("Saved model evaluate on test data...")
-    #     test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
-    #     test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
-    #     print("Test Accuracy: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
-    #     print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
-    #     print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
-    #     print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
-    #
-    # # 生成测试集的预测结果并将其存储到文件，这里的batch size设置为1
+        for i in range(0, FLAGS.max_epoch):
+            m.assign_lr(session, config.learning_rate)
+
+            print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
+            train_losses = run_epoch(session, m, train_data, m.train_op, config.batch_size, verbose=True)
+
+            dev_accuracy, dev_total_P, dev_total_R, dev_total_F, dev_per_P, dev_per_R, dev_per_F, dev_loc_P, dev_loc_R, dev_loc_F, \
+            dev_org_P, dev_org_R, dev_org_F = ner_evaluate(session, m, dev_data, tf.no_op(), config.batch_size, tag_to_id)
+            print("Dev Accuracy: %f, total P:%f, R:%f, F:%f" % (dev_accuracy, dev_total_P, dev_total_R, dev_total_F))
+            print("Dev PER P:%f, R:%f, F:%f" % (dev_per_P, dev_per_R, dev_per_F))
+            print("Dev LOC P:%f, R:%f, F:%f" % (dev_loc_P, dev_loc_R, dev_loc_F))
+            print("Dev ORG P:%f, R:%f, F:%f" % (dev_org_P, dev_org_R, dev_org_F))
+
+            test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
+            test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
+            print("Test Accuracy: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
+            print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
+            print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
+            print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
+
+            if dev_total_F > best_f:
+                best_f = dev_total_F
+                checkpoint_path = os.path.join(FLAGS.seg_train_dir, "ner_bilstm.ckpt")
+                m.saver.save(session, checkpoint_path)
+                print("Model Saved...")
+
+        print("Saved model evaluate on test data...")
+        test_accuracy, test_total_P, test_total_R, test_total_F, test_per_P, test_per_R, test_per_F, test_loc_P, test_loc_R, test_loc_F, \
+        test_org_P, test_org_R, test_org_F = ner_evaluate(session, m, test_data, tf.no_op(), config.batch_size, tag_to_id)
+        print("Test Accuracy: %f, total P:%f, R:%f, F:%f" % (test_accuracy, test_total_P, test_total_R, test_total_F))
+        print("Test PER P:%f, R:%f, F:%f" % (test_per_P, test_per_R, test_per_F))
+        print("Test LOC P:%f, R:%f, F:%f" % (test_loc_P, test_loc_R, test_loc_F))
+        print("Test ORG P:%f, R:%f, F:%f" % (test_org_P, test_org_R, test_org_F))
+
+    # 生成测试集的预测结果并将其存储到文件，这里的batch size设置为1
     # with tf.Graph().as_default(), tf.Session() as result_session:
     #     config.batch_size = 1
     #     initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
